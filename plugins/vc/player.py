@@ -516,14 +516,14 @@ async def _fetch_and_send_music(client: Client, message: Message):
             await _reply_and_delete_later(message, inform,
                                           DELAY_DELETE_INFORM)
             return
-        d_status = await message.reply_text("Downloading...", quote=True,
-                                            disable_notification=True)
+        # d_status = await message.reply_text("Downloading...", quote=True,
+        #                                     disable_notification=True)
         ydl.process_info(info_dict)
         audio_file = ydl.prepare_filename(info_dict)
         task = asyncio.create_task(_upload_audio(client, message, info_dict,
                                                  audio_file))
-        await message.reply_chat_action("upload_document")
-        await d_status.delete()
+        # await message.reply_chat_action("upload_document")
+        # await d_status.delete()
         while not task.done():
             await asyncio.sleep(4)
             # await message.reply_chat_action("upload_document")
