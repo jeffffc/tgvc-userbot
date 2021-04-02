@@ -498,6 +498,7 @@ async def music_downloader(client: Client, message: Message):
 
 async def _fetch_and_send_music(client: Client, message: Message):
     # await message.reply_chat_action("typing")
+    processing = await message.reply_text("Processing Youtube video...")
     try:
         ydl_opts = {
             'format': 'bestaudio',
@@ -529,6 +530,7 @@ async def _fetch_and_send_music(client: Client, message: Message):
         # await message.reply_chat_action("cancel")
         audio = task.result()
         message.audio = audio
+        await processing.delete()
 
         await play_track(client, message)
 
