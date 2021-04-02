@@ -80,7 +80,6 @@ async def generate_sysinfo(workdir):
 
 @Client.on_message(filters.group
                    & filters.text
-                   & self_or_contact_filter
                    & ~filters.edited
                    & ~filters.via_bot
                    & filters.regex("^!sysinfo$"))
