@@ -21,7 +21,7 @@ import asyncio
 from urllib.parse import urlparse
 from datetime import datetime, timedelta
 from pyrogram import Client, filters, emoji
-from pyrogram.types import Message, Audio
+from pyrogram.types import Message
 from pyrogram.methods.messages.download_media import DEFAULT_DOWNLOAD_DIR
 from pytgcalls import GroupCall
 import ffmpeg
@@ -92,13 +92,8 @@ self_or_contact_filter = filters.create(
 
 
 async def current_vc_filter(_, __, m: Message):
-    group_call = mp.group_call
-    if not group_call.is_connected:
-        return False
-    chat_id = int("-100" + str(group_call.full_chat.id))
-    if m.chat.id == chat_id:
-        return True
-    return False
+    mp = MUSIC_PLAYERS.get(m.chat.id)
+    return bool(mp) and mp.group_call.is_connected
 
 current_vc = filters.create(current_vc_filter)
 
@@ -121,6 +116,7 @@ class MusicPlayer(object):
         )
 
     async def send_playlist(self):
+        mp = MUSIC_PLAYERS.get(self.chat_id)
         playlist = self.playlist
         if not playlist:
             pl = f"{emoji.NO_ENTRY} empty playlist"
@@ -135,28 +131,32 @@ class MusicPlayer(object):
             ])
         if mp.msg.get('playlist') is not None:
             await mp.msg['playlist'].delete()
-        mp.msg['playlist'] = await send_text(pl)
+        mp.msg['playlist'] = await send_text(mp, pl)
 
 
-mp = MusicPlayer()
+MUSIC_PLAYERS = {}
+FFMPEG_PROCESSES = {}
 
 
 # - pytgcalls handlers
 
 
-@mp.group_call.on_network_status_changed
-async def network_status_changed_handler(gc: GroupCall, is_connected: bool):
-    if is_connected:
-        mp.chat_id = int("-100" + str(gc.full_chat.id))
-        await send_text(f"{emoji.CHECK_MARK_BUTTON} joined the voice chat")
-    else:
-        await send_text(f"{emoji.CROSS_MARK_BUTTON} left the voice chat")
-        mp.chat_id = None
+# TODO: Find a suitable replacement for these two
+# (the join and leave messages are implemented elsewhere for now)
+
+# @mp.group_call.on_network_status_changed
+# async def network_status_changed_handler(gc: GroupCall, is_connected: bool):
+#     if is_connected:
+#         mp.chat_id = int("-100" + str(gc.full_chat.id))
+#         await send_text(f"{emoji.CHECK_MARK_BUTTON} joined the voice chat")
+#     else:
+#         await send_text(f"{emoji.CROSS_MARK_BUTTON} left the voice chat")
+#         mp.chat_id = None
 
 
-@mp.group_call.on_playout_ended
-async def playout_ended_handler(group_call, filename):
-    await skip_current_playing()
+# @mp.group_call.on_playout_ended
+# async def playout_ended_handler(group_call, filename):
+#     await skip_current_playing()
 
 
 # - Pyrogram handlers
@@ -168,6 +168,7 @@ async def playout_ended_handler(group_call, filename):
     & (filters.regex("^(\\/|!)play$") | filters.audio)
 )
 async def play_track(client, m: Message):
+    mp = MUSIC_PLAYERS.get(m.chat.id)
     group_call = mp.group_call
     playlist = mp.playlist
     # check audio
@@ -198,7 +199,7 @@ async def play_track(client, m: Message):
         m_status = await m.reply_text(
             f"{emoji.INBOX_TRAY} downloading and transcoding..."
         )
-        await download_audio(playlist[0])
+        await download_audio(mp, playlist[0])
         group_call.input_filename = os.path.join(
             client.workdir,
             DEFAULT_DOWNLOAD_DIR,
@@ -209,7 +210,7 @@ async def play_track(client, m: Message):
         print(f"- START PLAYING: {playlist[0].audio.title}")
     await mp.send_playlist()
     for track in playlist[:2]:
-        await download_audio(track)
+        await download_audio(mp, track)
     if not m.audio:
         await m.delete()
 
@@ -217,7 +218,8 @@ async def play_track(client, m: Message):
 @Client.on_message(main_filter
                    & current_vc
                    & filters.regex("^(\\/|!)current$"))
-async def show_current_playing_time(client, m: Message):
+async def show_current_playing_time(_, m: Message):
+    mp = MUSIC_PLAYERS.get(m.chat.id)
     start_time = mp.start_time
     playlist = mp.playlist
     if not start_time:
@@ -238,7 +240,8 @@ async def show_current_playing_time(client, m: Message):
 @Client.on_message(main_filter
                    & current_vc
                    & filters.regex("^(\\/|!)help$"))
-async def show_help(client, m: Message):
+async def show_help(_, m: Message):
+    mp = MUSIC_PLAYERS.get(m.chat.id)
     if mp.msg.get('help') is not None:
         await mp.msg['help'].delete()
     mp.msg['help'] = await m.reply_text(USERBOT_HELP, quote=False)
@@ -248,10 +251,11 @@ async def show_help(client, m: Message):
 @Client.on_message(main_filter
                    & current_vc
                    & filters.command("skip", prefixes="!"))
-async def skip_track(client, m: Message):
+async def skip_track(_, m: Message):
+    mp = MUSIC_PLAYERS.get(m.chat.id)
     playlist = mp.playlist
     if len(m.command) == 1:
-        await skip_current_playing()
+        await skip_current_playing(mp)
     else:
         try:
             items = list(dict.fromkeys(m.command[1:]))
@@ -276,47 +280,57 @@ async def skip_track(client, m: Message):
 @Client.on_message(main_filter
                    & filters.regex("^!join$"))
 async def join_group_call(client, m: Message):
-    group_call = mp.group_call
-    group_call.client = client
-    if group_call.is_connected:
+    mp = MUSIC_PLAYERS.get(m.chat.id)
+    if mp and mp.group_call.is_connected:
         await m.reply_text(f"{emoji.ROBOT} already joined a voice chat")
         return
+    if not mp:
+        mp = MusicPlayer()
+        mp.chat_id = m.chat.id
+    group_call = mp.group_call
+    group_call.client = client
     await group_call.start(m.chat.id)
+    await send_text(mp, f"{emoji.CHECK_MARK_BUTTON} joined the voice chat")
     await m.delete()
 
 
 @Client.on_message(main_filter
                    & current_vc
                    & filters.regex("^!leave$"))
-async def leave_voice_chat(client, m: Message):
+async def leave_voice_chat(_, m: Message):
+    mp = MUSIC_PLAYERS.get(m.chat.id)
     group_call = mp.group_call
     mp.playlist.clear()
     group_call.input_filename = ''
     await group_call.stop()
+    await send_text(mp, f"{emoji.CROSS_MARK_BUTTON} left the voice chat")
     await m.delete()
+    del MUSIC_PLAYERS[m.chat.id]
 
 
-@Client.on_message(main_filter
-                   & filters.regex("^!vc$"))
-async def list_voice_chat(client, m: Message):
-    group_call = mp.group_call
-    if group_call.is_connected:
-        chat_id = int("-100" + str(group_call.full_chat.id))
-        chat = await client.get_chat(chat_id)
-        reply = await m.reply_text(
-            f"{emoji.MUSICAL_NOTES} **currently in the voice chat**:\n"
-            f"- **{chat.title}**"
-        )
-    else:
-        reply = await m.reply_text(emoji.NO_ENTRY
-                                   + "didn't join any voice chat yet")
-    await _delay_delete_messages((reply, m), DELETE_DELAY)
+# TODO write a suitable replacement for this
+# @Client.on_message(main_filter
+#                    & filters.regex("^!vc$"))
+# async def list_voice_chat(client, m: Message):
+#     group_call = mp.group_call
+#     if group_call.is_connected:
+#         chat_id = int("-100" + str(group_call.full_chat.id))
+#        chat = await client.get_chat(chat_id)
+#         reply = await m.reply_text(
+#             f"{emoji.MUSICAL_NOTES} **currently in the voice chat**:\n"
+#             f"- **{chat.title}**"
+#         )
+#     else:
+#         reply = await m.reply_text(emoji.NO_ENTRY
+#                                    + "didn't join any voice chat yet")
+#     await _delay_delete_messages((reply, m), DELETE_DELAY)
 
 
 @Client.on_message(main_filter
                    & current_vc
                    & filters.regex("^!stop$"))
 async def stop_playing(_, m: Message):
+    mp = MUSIC_PLAYERS.get(m.chat.id)
     group_call = mp.group_call
     group_call.stop_playout()
     reply = await m.reply_text(f"{emoji.STOP_BUTTON} stopped playing")
@@ -329,6 +343,7 @@ async def stop_playing(_, m: Message):
                    & current_vc
                    & filters.regex("^!replay$"))
 async def restart_playing(_, m: Message):
+    mp = MUSIC_PLAYERS.get(m.chat.id)
     group_call = mp.group_call
     if not mp.playlist:
         return
@@ -345,6 +360,7 @@ async def restart_playing(_, m: Message):
                    & current_vc
                    & filters.regex("^!pause"))
 async def pause_playing(_, m: Message):
+    mp = MUSIC_PLAYERS.get(m.chat.id)
     mp.group_call.pause_playout()
     await mp.update_start_time(reset=True)
     reply = await m.reply_text(f"{emoji.PLAY_OR_PAUSE_BUTTON} paused",
@@ -357,6 +373,7 @@ async def pause_playing(_, m: Message):
                    & current_vc
                    & filters.regex("^!resume"))
 async def resume_playing(_, m: Message):
+    mp = MUSIC_PLAYERS.get(m.chat.id)
     mp.group_call.resume_playout()
     reply = await m.reply_text(f"{emoji.PLAY_OR_PAUSE_BUTTON} resumed",
                                quote=False)
@@ -367,15 +384,15 @@ async def resume_playing(_, m: Message):
 
 
 @Client.on_message(main_filter
-                   & current_vc
                    & filters.regex("^!clean$"))
 async def clean_raw_pcm(client, m: Message):
     download_dir = os.path.join(client.workdir, DEFAULT_DOWNLOAD_DIR)
     all_fn = os.listdir(download_dir)
-    for track in mp.playlist[:2]:
-        track_fn = f"{track.audio.file_unique_id}.raw"
-        if track_fn in all_fn:
-            all_fn.remove(track_fn)
+    for mp in MUSIC_PLAYERS.values():
+        for track in mp.playlist[:2]:
+            track_fn = f"{track.audio.file_unique_id}.raw"
+            if track_fn in all_fn:
+                all_fn.remove(track_fn)
     count = 0
     if all_fn:
         for fn in all_fn:
@@ -390,6 +407,7 @@ async def clean_raw_pcm(client, m: Message):
                    & current_vc
                    & filters.regex("^!mute$"))
 async def mute(_, m: Message):
+    mp = MUSIC_PLAYERS.get(m.chat.id)
     group_call = mp.group_call
     group_call.set_is_mute(True)
     reply = await m.reply_text(f"{emoji.MUTED_SPEAKER} muted")
@@ -400,6 +418,7 @@ async def mute(_, m: Message):
                    & current_vc
                    & filters.regex("^!unmute$"))
 async def unmute(_, m: Message):
+    mp = MUSIC_PLAYERS.get(m.chat.id)
     group_call = mp.group_call
     group_call.set_is_mute(False)
     reply = await m.reply_text(f"{emoji.SPEAKER_MEDIUM_VOLUME} unmuted")
@@ -410,6 +429,7 @@ async def unmute(_, m: Message):
                    & current_vc
                    & filters.regex("^(\\/|!)repo$"))
 async def show_repository(_, m: Message):
+    mp = MUSIC_PLAYERS.get(m.chat.id)
     if mp.msg.get('repo') is not None:
         await mp.msg['repo'].delete()
     mp.msg['repo'] = await m.reply_text(
@@ -423,7 +443,7 @@ async def show_repository(_, m: Message):
 # - Other functions
 
 
-async def send_text(text):
+async def send_text(mp, text):
     group_call = mp.group_call
     client = group_call.client
     chat_id = mp.chat_id
@@ -436,7 +456,7 @@ async def send_text(text):
     return message
 
 
-async def skip_current_playing():
+async def skip_current_playing(mp):
     group_call = mp.group_call
     playlist = mp.playlist
     if not playlist:
@@ -461,10 +481,10 @@ async def skip_current_playing():
     )
     if len(playlist) == 1:
         return
-    await download_audio(playlist[1])
+    await download_audio(mp, playlist[1])
 
 
-async def download_audio(m: Message):
+async def download_audio(mp, m: Message):
     group_call = mp.group_call
     client = group_call.client
     raw_file = os.path.join(client.workdir, DEFAULT_DOWNLOAD_DIR,
@@ -519,8 +539,7 @@ async def _fetch_and_send_music(client: Client, message: Message):
         #                                     disable_notification=True)
         ydl.process_info(info_dict)
         audio_file = ydl.prepare_filename(info_dict)
-        task = asyncio.create_task(_upload_audio(client, message, info_dict,
-                                                 audio_file))
+        task = asyncio.create_task(_upload_audio(client, info_dict, audio_file))
         # await message.reply_chat_action("upload_document")
         # await d_status.delete()
         while not task.done():
@@ -552,7 +571,7 @@ async def _reply_and_delete_later(message: Message, text: str, delay: int):
     await reply.delete()
 
 
-async def _upload_audio(client: Client, message: Message, info_dict, audio_file):
+async def _upload_audio(client: Client, info_dict, audio_file):
     basename = audio_file.rsplit(".", 1)[-2]
     if info_dict['ext'] == 'webm':
         audio_file_opus = basename + ".opus"
@@ -609,4 +628,3 @@ def _crop_to_square(img):
     right = (width + length) / 2
     bottom = (height + length) / 2
     return img.crop((left, top, right, bottom))
-
