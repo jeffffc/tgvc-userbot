@@ -81,7 +81,6 @@ main_filter = (
     filters.group
     & filters.text
     & ~filters.edited
-    & ~filters.via_bot
 )
 self_or_contact_filter = filters.create(
     lambda
