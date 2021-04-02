@@ -4,3 +4,6 @@ ffmpeg-python
 psutil
 pytgcalls
 wheel
+ffmpeg
+youtube_dl
+Pillow

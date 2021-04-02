@@ -17,3 +17,6 @@ __pycache__/
 
 # pytgcalls
 /*.so
+
+# .idea directory
+/.idea/
