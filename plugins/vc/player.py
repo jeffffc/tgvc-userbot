@@ -27,6 +27,7 @@ from pytgcalls import GroupCall
 import ffmpeg
 from youtube_dl import YoutubeDL
 from PIL import Image
+import logging
 
 DELETE_DELAY = 8
 MUSIC_MAX_LENGTH = 10800
@@ -92,7 +93,10 @@ self_or_contact_filter = filters.create(
 
 
 async def current_vc_filter(_, __, m: Message):
+    logging.warning("ENTERING current_vc_filter")
     mp = MUSIC_PLAYERS.get(m.chat.id)
+    logging.warning(f"bool(mp) - {str(bool(mp))}")
+    logging.warning(f"mp.group_call.is_connected - {str(mp.group_call.is_connected)}")
     return bool(mp) and mp.group_call.is_connected
 
 current_vc = filters.create(current_vc_filter)
