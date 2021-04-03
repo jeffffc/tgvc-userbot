@@ -135,7 +135,7 @@ class MusicPlayer(object):
 
 
 MUSIC_PLAYERS = {}
-FFMPEG_PROCESSES = {}
+FFMPEG_PROCESSES = {}  # TODO make use of this
 
 
 # - pytgcalls handlers
@@ -290,6 +290,7 @@ async def join_group_call(client, m: Message):
     group_call = mp.group_call
     group_call.client = client
     await group_call.start(m.chat.id)
+    MUSIC_PLAYERS[m.chat.id] = mp
     await send_text(mp, f"{emoji.CHECK_MARK_BUTTON} joined the voice chat")
     await m.delete()
 
