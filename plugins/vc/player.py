@@ -295,6 +295,7 @@ async def join_group_call(client, m: Message):
     group_call = mp.group_call
     group_call.client = client
     await group_call.start(m.chat.id)
+    logging.warning(f"After calling group_call.start(): {str(group_call.is_connected)}")
     await send_text(mp, f"{emoji.CHECK_MARK_BUTTON} joined the voice chat")
     await m.delete()
 
