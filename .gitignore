@@ -17,6 +17,7 @@ __pycache__/
 
 # pytgcalls
 /*.so
+/group_call.log
 
 # .idea directory
 /.idea/
