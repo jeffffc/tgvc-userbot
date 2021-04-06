@@ -18,7 +18,6 @@ How to use:
 """
 import os
 import asyncio
-from urllib.parse import urlparse
 from datetime import datetime, timedelta
 from pyrogram import Client, filters, emoji
 from pyrogram.types import Message
@@ -26,7 +25,7 @@ from pyrogram.methods.messages.download_media import DEFAULT_DOWNLOAD_DIR
 from pytgcalls import GroupCall
 import ffmpeg
 from youtube_dl import YoutubeDL
-from PIL import Image
+from typing import Optional, List, Dict
 
 DELETE_DELAY = 8
 MUSIC_MAX_LENGTH = 10800
@@ -118,13 +117,24 @@ async def network_status_changed_handler(gc: GroupCall, is_connected: bool):
         del MUSIC_PLAYERS[chat_id]
 
 
-async def playout_ended_handler(group_call, _):
+async def playout_ended_handler(group_call: GroupCall, _):
     chat_id = int("-100" + str(group_call.full_chat.id))
     mp = MUSIC_PLAYERS.get(chat_id)
     await skip_current_playing(mp)
 
 
-# - class
+# - classes
+
+
+class MusicToPlay(object):
+    def __init__(self, m: Message, title: str, duration: int, file_path: Optional[str]):
+        self.message = m
+        self.title = title
+        self.duration = duration
+
+        # Will only be present for YouTube audios. They are downloaded immediately.
+        # This is the relative path from the current working directory to the raw file.
+        self.file_path = file_path
 
 
 class MusicPlayer(object):
@@ -139,7 +149,7 @@ class MusicPlayer(object):
 
         self.chat_id = None
         self.start_time = None
-        self.playlist = []
+        self.playlist: List[MusicToPlay] = []
         self.msg = {}
 
     async def update_start_time(self, reset=False):
@@ -159,7 +169,7 @@ class MusicPlayer(object):
             else:
                 pl = f"{emoji.PLAY_BUTTON} **Playlist**:\n"
             pl += "\n".join([
-                f"**{i}**. **[{x.audio.title}]({x.link})**"
+                f"**{i}**. **[{x.title}]({x.message.link})**"
                 for i, x in enumerate(playlist)
             ])
         if mp.msg.get('playlist') is not None:
@@ -167,7 +177,7 @@ class MusicPlayer(object):
         mp.msg['playlist'] = await send_text(mp, pl)
 
 
-MUSIC_PLAYERS = {}
+MUSIC_PLAYERS: Dict[int, MusicPlayer] = {}
 
 
 # - Pyrogram handlers
@@ -199,31 +209,89 @@ async def play_track(client, m: Message):
         await m.delete()
         return
     # check already added
-    if playlist and playlist[-1].audio.file_unique_id \
+    if playlist and playlist[-1].message.audio and playlist[-1].message.audio.file_unique_id \
             == m_audio.audio.file_unique_id:
         reply = await m.reply_text(f"{emoji.ROBOT} already added")
         await _delay_delete_messages((reply, m), DELETE_DELAY)
         return
     # add to playlist
-    playlist.append(m_audio)
+    playlist.append(MusicToPlay(m_audio, m_audio.audio.title, m.audio.duration, None))
     if len(playlist) == 1:
         m_status = await m.reply_text(
             f"{emoji.INBOX_TRAY} downloading and transcoding..."
         )
-        await download_audio(mp, playlist[0])
+        await download_audio(mp, m_audio)
         group_call.input_filename = os.path.join(
             client.workdir,
             DEFAULT_DOWNLOAD_DIR,
-            f"{playlist[0].audio.file_unique_id}.raw"
+            f"{m_audio.audio.file_unique_id}.raw"
         )
         await mp.update_start_time()
         await m_status.delete()
-        print(f"- START PLAYING: {playlist[0].audio.title}")
+        print(f"- START PLAYING: {m_audio.audio.title}")
     await mp.send_playlist()
     for track in playlist[:2]:
-        await download_audio(mp, track)
+        if not track.file_path:
+            await download_audio(mp, track.message)
     if not m.audio:
         await m.delete()
+
+
+@Client.on_message(main_filter
+                   & current_vc
+                   & filters.regex(REGEX_SITES)
+                   & ~filters.regex(REGEX_EXCLUDE_URL))
+async def music_downloader(client: Client, message: Message):
+    mp = MUSIC_PLAYERS.get(message.chat.id)
+    if not mp:
+        return
+
+    processing = await message.reply_text(f"{emoji.INBOX_TRAY} Processing Youtube video...")
+    try:
+        ydl_opts = {
+            'format': 'bestaudio',
+            'outtmpl': '%(title)s - %(extractor)s-%(id)s.%(ext)s',
+        }
+        ydl = YoutubeDL(ydl_opts)
+        info_dict = ydl.extract_info(message.text, download=False)
+
+        if info_dict['duration'] > MUSIC_MAX_LENGTH:
+            readable_max_length = str(timedelta(seconds=MUSIC_MAX_LENGTH))
+            inform = ("This won't be downloaded because its audio length is "
+                      "longer than the limit `{}` which is set by the bot"
+                      .format(readable_max_length))
+            await _reply_and_delete_later(message, inform,
+                                          DELAY_DELETE_INFORM)
+            return
+
+        raw_file = f'{DEFAULT_DOWNLOAD_DIR}/YT_{info_dict["id"]}.raw'
+        if not os.path.isfile(raw_file):
+            ydl.process_info(info_dict)
+            audio_file = ydl.prepare_filename(info_dict)
+            ffmpeg.input(audio_file).output(
+                raw_file,
+                format='s16le',
+                acodec='pcm_s16le',
+                ac=2,
+                ar='48k',
+                loglevel='error'
+            ).overwrite_output().run()
+            os.remove(audio_file)
+        await processing.delete()
+        mp.playlist.append(MusicToPlay(message, info_dict["title"], info_dict["duration"], raw_file))
+        if len(mp.playlist) == 1:
+            mp.group_call.input_filename = os.path.join(
+                client.workdir,
+                raw_file
+            )
+            await mp.update_start_time()
+            print(f"- START PLAYING: {mp.playlist[0].title}")
+        await mp.send_playlist()
+        for track in mp.playlist[:2]:
+            if not track.file_path:
+                await download_audio(mp, track.message)
+    except Exception as e:
+        await message.reply_text(repr(e))
 
 
 @Client.on_message(main_filter
@@ -240,9 +308,9 @@ async def show_current_playing_time(_, m: Message):
     utcnow = datetime.utcnow().replace(microsecond=0)
     if mp.msg.get('current') is not None:
         await mp.msg['current'].delete()
-    mp.msg['current'] = await playlist[0].reply_text(
+    mp.msg['current'] = await playlist[0].message.reply_text(
         f"{emoji.PLAY_BUTTON}  {utcnow - start_time} / "
-        f"{timedelta(seconds=playlist[0].audio.duration)}",
+        f"{timedelta(seconds=playlist[0].duration)}",
         disable_notification=True
     )
     await m.delete()
@@ -275,7 +343,7 @@ async def skip_track(_, m: Message):
             text = []
             for i in items:
                 if 2 <= i <= (len(playlist) - 1):
-                    audio = f"[{playlist[i].audio.title}]({playlist[i].link})"
+                    audio = f"[{playlist[i].title}]({playlist[i].message.link})"
                     playlist.pop(i)
                     text.append(f"{emoji.WASTEBASKET} {i}. **{audio}**")
                 else:
@@ -390,19 +458,7 @@ async def resume_playing(_, m: Message):
 @Client.on_message(main_filter
                    & filters.regex("^!clean$"))
 async def clean_raw_pcm(client, m: Message):
-    download_dir = os.path.join(client.workdir, DEFAULT_DOWNLOAD_DIR)
-    all_fn = os.listdir(download_dir)
-    for mp in MUSIC_PLAYERS.values():
-        for track in mp.playlist[:2]:
-            track_fn = f"{track.audio.file_unique_id}.raw"
-            if track_fn in all_fn:
-                all_fn.remove(track_fn)
-    count = 0
-    if all_fn:
-        for fn in all_fn:
-            if fn.endswith(".raw"):
-                count += 1
-                os.remove(os.path.join(download_dir, fn))
+    count = _clean_files(client)
     reply = await m.reply_text(f"{emoji.WASTEBASKET} cleaned {count} files")
     await _delay_delete_messages((reply, m), DELETE_DELAY)
 
@@ -447,7 +503,7 @@ async def show_repository(_, m: Message):
 # - Other functions
 
 
-async def send_text(mp, text):
+async def send_text(mp: MusicPlayer, text: str):
     group_call = mp.group_call
     client = group_call.client
     chat_id = mp.chat_id
@@ -460,7 +516,7 @@ async def send_text(mp, text):
     return message
 
 
-async def skip_current_playing(mp):
+async def skip_current_playing(mp: MusicPlayer):
     group_call = mp.group_call
     playlist = mp.playlist
     if not playlist:
@@ -470,25 +526,23 @@ async def skip_current_playing(mp):
         return
     client = group_call.client
     download_dir = os.path.join(client.workdir, DEFAULT_DOWNLOAD_DIR)
-    group_call.input_filename = os.path.join(
+    group_call.input_filename = playlist[1].file_path or os.path.join(
         download_dir,
-        f"{playlist[1].audio.file_unique_id}.raw"
+        f"{playlist[1].message.audio.file_unique_id}.raw"
     )
     await mp.update_start_time()
     # remove old track from playlist
     old_track = playlist.pop(0)
-    print(f"- START PLAYING: {playlist[0].audio.title}")
+    print(f"- START PLAYING: {playlist[0].title}")
     await mp.send_playlist()
-    os.remove(os.path.join(
-        download_dir,
-        f"{old_track.audio.file_unique_id}.raw")
-    )
+    _clean_files(mp.group_call.client)
     if len(playlist) == 1:
         return
-    await download_audio(mp, playlist[1])
+    if not playlist[1].file_path:
+        await download_audio(mp, playlist[1].message)
 
 
-async def download_audio(mp, m: Message):
+async def download_audio(mp: MusicPlayer, m: Message):
     group_call = mp.group_call
     client = group_call.client
     raw_file = os.path.join(client.workdir, DEFAULT_DOWNLOAD_DIR,
@@ -512,123 +566,31 @@ async def _delay_delete_messages(messages: tuple, delay: int):
         await m.delete()
 
 
-@Client.on_message(main_filter
-                   & filters.regex(REGEX_SITES)
-                   & ~filters.regex(REGEX_EXCLUDE_URL))
-async def music_downloader(client: Client, message: Message):
-    await _fetch_and_send_music(client, message)
-
-
-async def _fetch_and_send_music(client: Client, message: Message):
-    # await message.reply_chat_action("typing")
-    processing = await message.reply_text("Processing Youtube video...")
-    try:
-        ydl_opts = {
-            'format': 'bestaudio',
-            'outtmpl': '%(title)s - %(extractor)s-%(id)s.%(ext)s',
-            'writethumbnail': True
-        }
-        ydl = YoutubeDL(ydl_opts)
-        info_dict = ydl.extract_info(message.text, download=False)
-
-        if info_dict['duration'] > MUSIC_MAX_LENGTH:
-            readable_max_length = str(timedelta(seconds=MUSIC_MAX_LENGTH))
-            inform = ("This won't be downloaded because its audio length is "
-                      "longer than the limit `{}` which is set by the bot"
-                      .format(readable_max_length))
-            await _reply_and_delete_later(message, inform,
-                                          DELAY_DELETE_INFORM)
-            return
-        # d_status = await message.reply_text("Downloading...", quote=True,
-        #                                     disable_notification=True)
-        ydl.process_info(info_dict)
-        audio_file = ydl.prepare_filename(info_dict)
-        task = asyncio.create_task(_upload_audio(client, info_dict, audio_file))
-        # await message.reply_chat_action("upload_document")
-        # await d_status.delete()
-        while not task.done():
-            await asyncio.sleep(4)
-            # await message.reply_chat_action("upload_document")
-        # await message.reply_chat_action("cancel")
-        audio = task.result()
-        message.audio = audio
-        await processing.delete()
-
-        await play_track(client, message)
-
-        if message.chat.type == "private":
-            await message.delete()
-    except Exception as e:
-        await message.reply_text(repr(e))
-
-
-def _youtube_video_not_music(info_dict):
-    if info_dict['extractor'] == 'youtube' \
-            and 'Music' not in info_dict['categories']:
-        return True
-    return False
-
-
 async def _reply_and_delete_later(message: Message, text: str, delay: int):
     reply = await message.reply_text(text, quote=True)
     await asyncio.sleep(delay)
     await reply.delete()
 
 
-async def _upload_audio(client: Client, info_dict, audio_file):
-    basename = audio_file.rsplit(".", 1)[-2]
-    if info_dict['ext'] == 'webm':
-        audio_file_opus = basename + ".opus"
-        ffmpeg.input(audio_file).output(audio_file_opus, codec="copy").run()
-        os.remove(audio_file)
-        audio_file = audio_file_opus
-    thumbnail_url = info_dict['thumbnail']
-    if os.path.isfile(basename + ".jpg"):
-        thumbnail_file = basename + ".jpg"
-    else:
-        thumbnail_file = basename + "." + \
-            _get_file_extension_from_url(thumbnail_url)
-    squarethumb_file = basename + "_squarethumb.jpg"
-    make_squarethumb(thumbnail_file, squarethumb_file)
-    webpage_url = info_dict['webpage_url']
-    title = info_dict['title']
-    caption = f"<b><a href=\"{webpage_url}\">{title}</a></b>"
-    duration = int(float(info_dict['duration']))
-    performer = info_dict['uploader']
-    res = await client.send_audio(chat_id=-1001313909409,
-                                  audio=audio_file,
-                                  caption=caption,
-                                  duration=duration,
-                                  performer=performer,
-                                  title=title,
-                                  parse_mode='HTML',
-                                  thumb=squarethumb_file)
-    for f in (audio_file, thumbnail_file, squarethumb_file):
-        os.remove(f)
-    return res.audio
+def _clean_files(client: Client) -> int:
+    download_dir = os.path.join(client.workdir, DEFAULT_DOWNLOAD_DIR)
+    all_fn = os.listdir(download_dir)
+    for mp in MUSIC_PLAYERS.values():
+        for track in mp.playlist[:2]:
+            if track.message.audio:
+                track_fn = f"{track.message.audio.file_unique_id}.raw"
+                if track_fn in all_fn:
+                    all_fn.remove(track_fn)
+        for track in mp.playlist:
+            if track.file_path:
+                track_fn = os.path.basename(track.file_path)
+                if track_fn in all_fn:
+                    all_fn.remove(track_fn)
 
-
-def _get_file_extension_from_url(url):
-    url_path = urlparse(url).path
-    basename = os.path.basename(url_path)
-    return basename.split(".")[-1]
-
-
-def make_squarethumb(thumbnail, output):
-    """Convert thumbnail to square thumbnail"""
-    # https://stackoverflow.com/a/52177551
-    original_thumb = Image.open(thumbnail)
-    squarethumb = _crop_to_square(original_thumb)
-    squarethumb.thumbnail((TG_THUMB_MAX_LENGTH, TG_THUMB_MAX_LENGTH),
-                          Image.ANTIALIAS)
-    squarethumb.save(output)
-
-
-def _crop_to_square(img):
-    width, height = img.size
-    length = min(width, height)
-    left = (width - length) / 2
-    top = (height - length) / 2
-    right = (width + length) / 2
-    bottom = (height + length) / 2
-    return img.crop((left, top, right, bottom))
+    count = 0
+    if all_fn:
+        for fn in all_fn:
+            if fn.endswith(".raw"):
+                count += 1
+                os.remove(os.path.join(download_dir, fn))
+    return count
