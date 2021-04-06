@@ -27,7 +27,6 @@ from pytgcalls import GroupCall
 import ffmpeg
 from youtube_dl import YoutubeDL
 from PIL import Image
-import logging
 
 DELETE_DELAY = 8
 MUSIC_MAX_LENGTH = 10800
@@ -93,13 +92,36 @@ self_or_contact_filter = filters.create(
 
 
 async def current_vc_filter(_, __, m: Message):
-    logging.warning("ENTERING current_vc_filter")
     mp = MUSIC_PLAYERS.get(m.chat.id)
-    logging.warning(f"bool(mp) - {str(bool(mp))}")
-    logging.warning(f"mp.group_call.is_connected - {str(mp.group_call.is_connected)}")
     return bool(mp) and mp.group_call.is_connected
 
 current_vc = filters.create(current_vc_filter)
+
+
+# - pytgcalls handlers
+
+
+async def network_status_changed_handler(gc: GroupCall, is_connected: bool):
+    if (not gc) or (not gc.full_chat):
+        return
+
+    chat_id = int("-100" + str(gc.chat_peer.channel_id))
+    mp = MUSIC_PLAYERS.get(chat_id)
+    if not mp:
+        return
+    if is_connected:
+        mp.chat_id = int("-100" + str(gc.full_chat.id))
+        await send_text(mp, f"{emoji.CHECK_MARK_BUTTON} joined the voice chat")
+    else:
+        await send_text(mp, f"{emoji.CROSS_MARK_BUTTON} left the voice chat")
+        mp.chat_id = None
+        del MUSIC_PLAYERS[chat_id]
+
+
+async def playout_ended_handler(group_call, _):
+    chat_id = int("-100" + str(group_call.full_chat.id))
+    mp = MUSIC_PLAYERS.get(chat_id)
+    await skip_current_playing(mp)
 
 
 # - class
@@ -108,6 +130,13 @@ current_vc = filters.create(current_vc_filter)
 class MusicPlayer(object):
     def __init__(self):
         self.group_call = GroupCall(None, path_to_log_file='')
+
+        # noinspection PyTypeChecker
+        self.netstat_changed = self.group_call.on_network_status_changed(network_status_changed_handler)
+
+        # noinspection PyTypeChecker
+        self.playout_ended = self.group_call.on_playout_ended(playout_ended_handler)
+
         self.chat_id = None
         self.start_time = None
         self.playlist = []
@@ -139,28 +168,6 @@ class MusicPlayer(object):
 
 
 MUSIC_PLAYERS = {}
-FFMPEG_PROCESSES = {}  # TODO make use of this
-
-
-# - pytgcalls handlers
-
-
-# TODO: Find a suitable replacement for these two
-# (the join and leave messages are implemented elsewhere for now)
-
-# @mp.group_call.on_network_status_changed
-# async def network_status_changed_handler(gc: GroupCall, is_connected: bool):
-#     if is_connected:
-#         mp.chat_id = int("-100" + str(gc.full_chat.id))
-#         await send_text(f"{emoji.CHECK_MARK_BUTTON} joined the voice chat")
-#     else:
-#         await send_text(f"{emoji.CROSS_MARK_BUTTON} left the voice chat")
-#         mp.chat_id = None
-
-
-# @mp.group_call.on_playout_ended
-# async def playout_ended_handler(group_call, filename):
-#     await skip_current_playing()
 
 
 # - Pyrogram handlers
@@ -295,8 +302,6 @@ async def join_group_call(client, m: Message):
     group_call = mp.group_call
     group_call.client = client
     await group_call.start(m.chat.id)
-    logging.warning(f"After calling group_call.start(): {str(group_call.is_connected)}")
-    await send_text(mp, f"{emoji.CHECK_MARK_BUTTON} joined the voice chat")
     await m.delete()
 
 
@@ -309,27 +314,20 @@ async def leave_voice_chat(_, m: Message):
     mp.playlist.clear()
     group_call.input_filename = ''
     await group_call.stop()
-    await send_text(mp, f"{emoji.CROSS_MARK_BUTTON} left the voice chat")
     await m.delete()
-    del MUSIC_PLAYERS[m.chat.id]
 
 
-# TODO write a suitable replacement for this
-# @Client.on_message(main_filter
-#                    & filters.regex("^!vc$"))
-# async def list_voice_chat(client, m: Message):
-#     group_call = mp.group_call
-#     if group_call.is_connected:
-#         chat_id = int("-100" + str(group_call.full_chat.id))
-#        chat = await client.get_chat(chat_id)
-#         reply = await m.reply_text(
-#             f"{emoji.MUSICAL_NOTES} **currently in the voice chat**:\n"
-#             f"- **{chat.title}**"
-#         )
-#     else:
-#         reply = await m.reply_text(emoji.NO_ENTRY
-#                                    + "didn't join any voice chat yet")
-#     await _delay_delete_messages((reply, m), DELETE_DELAY)
+@Client.on_message(main_filter
+                   & filters.regex("^!vc$"))
+async def list_voice_chat(_, m: Message):
+    if not MUSIC_PLAYERS:
+        await m.reply_text(f"{emoji.CROSS_MARK} **currently not in any voice chat!**")
+        return
+
+    await m.reply_text(
+            f"{emoji.MUSICAL_NOTES} **currently in the voice chat(s)**:\n"
+            '\n'.join((f"{i}: **{chat_id}**" for i, chat_id in enumerate(MUSIC_PLAYERS)))
+        )
 
 
 @Client.on_message(main_filter
@@ -598,13 +596,13 @@ async def _upload_audio(client: Client, info_dict, audio_file):
     duration = int(float(info_dict['duration']))
     performer = info_dict['uploader']
     res = await client.send_audio(chat_id=-1001313909409,
-                                    audio=audio_file,
-                                    caption=caption,
-                                    duration=duration,
-                                    performer=performer,
-                                    title=title,
-                                    parse_mode='HTML',
-                                    thumb=squarethumb_file)
+                                  audio=audio_file,
+                                  caption=caption,
+                                  duration=duration,
+                                  performer=performer,
+                                  title=title,
+                                  parse_mode='HTML',
+                                  thumb=squarethumb_file)
     for f in (audio_file, thumbnail_file, squarethumb_file):
         os.remove(f)
     return res.audio
