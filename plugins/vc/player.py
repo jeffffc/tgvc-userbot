@@ -266,7 +266,8 @@ async def music_searcher(client: Client, message: Message):
         keyword = " ".join(message.command[1:])
         searching = await message.reply_text(
             f"{emoji.INBOX_TRAY} Searching Youtube video with keyword `{keyword}`...", parse_mode='md')
-        res = YoutubeSearch(keyword, max_results=1).to_dict()[0]
+        loop = asyncio.get_event_loop()
+        res = await loop.run_in_executor(None, search_youtube, keyword)
         title = res['title']
         suffix = res['url_suffix']
         link = f'https://www.youtube.com{suffix}'
@@ -528,6 +529,10 @@ async def process_youtube_link(youtube_link, client: Client, original_message: M
     for track in mp.playlist[:2]:
         if not track.file_path:
             await download_audio(mp, track.message)
+
+
+def search_youtube(keyword):
+    return YoutubeSearch(keyword, max_results=1).to_dict()[0]
 
 
 async def send_text(mp: MusicPlayer, text: str):
