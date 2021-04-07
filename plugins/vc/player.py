@@ -532,6 +532,7 @@ async def process_youtube_link(youtube_link, client: Client, original_message: M
 
 
 def search_youtube(keyword):
+    # search youtube with specific keyword and return top #1 result
     return YoutubeSearch(keyword, max_results=1).to_dict()[0]
 
 
