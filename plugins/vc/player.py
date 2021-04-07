@@ -152,6 +152,7 @@ class MusicPlayer(object):
         self.playout_ended = self.group_call.on_playout_ended(playout_ended_handler)
 
         self.chat_id = None
+        self.chat_title = None
         self.start_time = None
         self.playlist: List[MusicToPlay] = []
         self.msg = {}
@@ -353,6 +354,7 @@ async def join_group_call(client, m: Message):
     if not mp:
         mp = MusicPlayer()
         mp.chat_id = m.chat.id
+        mp.chat_title = m.chat.title
         MUSIC_PLAYERS[m.chat.id] = mp
     group_call = mp.group_call
     group_call.client = client
@@ -394,7 +396,7 @@ async def leave_all_voice_chat(c: Client, m: Message):
 
 
 @Client.on_message(main_filter
-                   & filters.regex("^!vc$")
+                   & filters.command('vc', prefixes='!')
                    & global_admins_filter)
 async def list_voice_chat(_, m: Message):
     if not MUSIC_PLAYERS:
@@ -402,8 +404,8 @@ async def list_voice_chat(_, m: Message):
         return
 
     await m.reply_text(
-            f"{emoji.MUSICAL_NOTES} **currently in the voice chat(s)**:\n"
-            '\n'.join((f"{i}: **{chat_id}**" for i, chat_id in enumerate(MUSIC_PLAYERS)))
+            f"{emoji.MUSICAL_NOTES} **currently in the voice chat(s)**:\n" +
+            '\n'.join((f"{i + 1}: **{mp.chat_title} ({chat_id})**" for i, (chat_id, mp) in enumerate(MUSIC_PLAYERS.items())))
         )
 
 
