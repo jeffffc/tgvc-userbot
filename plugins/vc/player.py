@@ -271,7 +271,10 @@ async def music_searcher(client: Client, message: Message):
         searching = await message.reply_text(
             f"{emoji.INBOX_TRAY} Searching Youtube video with keyword `{keyword}`...", parse_mode='md')
         loop = asyncio.get_event_loop()
-        res = await loop.run_in_executor(None, search_youtube, keyword)
+        try:
+            res = await loop.run_in_executor(None, search_youtube, keyword)
+        except Exception as e:
+            await message.reply_text(repr(e))
         title = res['title']
         suffix = res['url_suffix']
         link = f'https://www.youtube.com{suffix}'
@@ -515,48 +518,51 @@ async def show_repository(_, m: Message):
 # - Other functions
 async def process_youtube_link(youtube_link, client: Client, original_message: Message,
                                processing_message: Message, mp: MusicPlayer):
-    ydl_opts = {
-        'format': 'bestaudio',
-        'outtmpl': '%(title)s - %(extractor)s-%(id)s.%(ext)s',
-    }
-    ydl = YoutubeDL(ydl_opts)
-    info_dict = ydl.extract_info(youtube_link, download=False)
+    try:
+        ydl_opts = {
+            'format': 'bestaudio',
+            'outtmpl': '%(title)s - %(extractor)s-%(id)s.%(ext)s',
+        }
+        ydl = YoutubeDL(ydl_opts)
+        info_dict = ydl.extract_info(youtube_link, download=False)
 
-    if info_dict['duration'] > MUSIC_MAX_LENGTH:
-        readable_max_length = str(timedelta(seconds=MUSIC_MAX_LENGTH))
-        inform = ("This won't be downloaded because its audio length is "
-                  "longer than the limit `{}` which is set by the bot"
-                  .format(readable_max_length))
-        await _reply_and_delete_later(original_message, inform,
-                                      DELAY_DELETE_INFORM)
-        return
+        if info_dict['duration'] > MUSIC_MAX_LENGTH:
+            readable_max_length = str(timedelta(seconds=MUSIC_MAX_LENGTH))
+            inform = ("This won't be downloaded because its audio length is "
+                      "longer than the limit `{}` which is set by the bot"
+                      .format(readable_max_length))
+            await _reply_and_delete_later(original_message, inform,
+                                          DELAY_DELETE_INFORM)
+            return
 
-    raw_file = f'{DEFAULT_DOWNLOAD_DIR}YT_{info_dict["id"]}.raw'
-    if not os.path.isfile(raw_file):
-        ydl.process_info(info_dict)
-        audio_file = ydl.prepare_filename(info_dict)
-        ffmpeg.input(audio_file).filter('volume', 0.1).output(
-            raw_file,
-            format='s16le',
-            acodec='pcm_s16le',
-            ac=2,
-            ar='48k',
-            loglevel='error'
-        ).overwrite_output().run()
-        os.remove(audio_file)
-    await processing_message.delete()
-    mp.playlist.append(MusicToPlay(original_message, info_dict["title"], info_dict["duration"], raw_file))
-    if len(mp.playlist) == 1:
-        mp.group_call.input_filename = os.path.join(
-            client.workdir,
-            raw_file
-        )
-        await mp.update_start_time()
-        print(f"- START PLAYING: {mp.playlist[0].title}")
-    await mp.send_playlist()
-    for track in mp.playlist[:2]:
-        if not track.file_path:
-            await download_audio(mp, track.message)
+        raw_file = f'{DEFAULT_DOWNLOAD_DIR}YT_{info_dict["id"]}.raw'
+        if not os.path.isfile(raw_file):
+            ydl.process_info(info_dict)
+            audio_file = ydl.prepare_filename(info_dict)
+            ffmpeg.input(audio_file).filter('volume', 0.1).output(
+                raw_file,
+                format='s16le',
+                acodec='pcm_s16le',
+                ac=2,
+                ar='48k',
+                loglevel='error'
+            ).overwrite_output().run()
+            os.remove(audio_file)
+        await processing_message.delete()
+        mp.playlist.append(MusicToPlay(original_message, info_dict["title"], info_dict["duration"], raw_file))
+        if len(mp.playlist) == 1:
+            mp.group_call.input_filename = os.path.join(
+                client.workdir,
+                raw_file
+            )
+            await mp.update_start_time()
+            print(f"- START PLAYING: {mp.playlist[0].title}")
+        await mp.send_playlist()
+        for track in mp.playlist[:2]:
+            if not track.file_path:
+                await download_audio(mp, track.message)
+    except Exception as e:
+        await original_message.reply_text(repr(e))
 
 
 def search_youtube(keyword):
