@@ -220,7 +220,7 @@ async def play_track(client, m: Message):
         await _delay_delete_messages((reply, m), DELETE_DELAY)
         return
     # add to playlist
-    playlist.append(MusicToPlay(m_audio, m_audio.audio.title, m.audio.duration, None))
+    playlist.append(MusicToPlay(m_audio, m_audio.audio.title, m_audio.audio.duration, None))
     if len(playlist) == 1:
         m_status = await m.reply_text(
             f"{emoji.INBOX_TRAY} downloading and transcoding..."
@@ -275,6 +275,7 @@ async def music_searcher(client: Client, message: Message):
             res = await loop.run_in_executor(None, search_youtube, keyword)
         except Exception as e:
             await message.reply_text(repr(e))
+            return
         title = res['title']
         suffix = res['url_suffix']
         link = f'https://www.youtube.com{suffix}'
@@ -408,7 +409,8 @@ async def list_voice_chat(_, m: Message):
 
     await m.reply_text(
             f"{emoji.MUSICAL_NOTES} **currently in the voice chat(s)**:\n" +
-            '\n'.join((f"{i + 1}: **{mp.chat_title} ({chat_id})**" for i, (chat_id, mp) in enumerate(MUSIC_PLAYERS.items())))
+            '\n'.join((f"{i + 1}: **{mp.chat_title} ({chat_id})**"
+                       for i, (chat_id, mp) in enumerate(MUSIC_PLAYERS.items())))
         )
 
 
@@ -599,7 +601,7 @@ async def skip_current_playing(mp: MusicPlayer):
     )
     await mp.update_start_time()
     # remove old track from playlist
-    old_track = playlist.pop(0)
+    playlist.pop(0)
     print(f"- START PLAYING: {playlist[0].title}")
     await mp.send_playlist()
     _clean_files(mp.group_call.client)
