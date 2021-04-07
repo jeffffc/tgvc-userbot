@@ -28,10 +28,13 @@ from youtube_dl import YoutubeDL
 from youtube_search import YoutubeSearch
 from typing import Optional, List, Dict
 
+from userbot import global_admins_filter
+
 DELETE_DELAY = 8
 MUSIC_MAX_LENGTH = 10800
 DELAY_DELETE_INFORM = 10
 TG_THUMB_MAX_LENGTH = 320
+
 REGEX_SITES = (
     r"^((?:https?:)?\/\/)"
     r"?((?:www|m)\.)"
@@ -359,18 +362,40 @@ async def join_group_call(client, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.regex("^!leave$"))
+                   & filters.command('leave', prefixes='!'))
 async def leave_voice_chat(_, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     group_call = mp.group_call
     mp.playlist.clear()
     group_call.input_filename = ''
     await group_call.stop()
+    del MUSIC_PLAYERS[m.chat.id]
+    await m.reply_text(f'{emoji.ROBOT} left the voice chat')
     await m.delete()
 
 
 @Client.on_message(main_filter
-                   & filters.regex("^!vc$"))
+                   & filters.command('leaveall', prefixes='!')
+                   & global_admins_filter)
+async def leave_all_voice_chat(c: Client, m: Message):
+    cnt = len(MUSIC_PLAYERS)
+    if cnt == 0:
+        await m.reply_text(f'{emoji.ROBOT} Not in any voice chats.')
+        return
+    players = MUSIC_PLAYERS.copy()
+    for chatid, mp in players.items():
+        group_call = mp.group_call
+        mp.playlist.clear()
+        group_call.input_filename = ''
+        await group_call.stop()
+        del MUSIC_PLAYERS[chatid]
+        await c.send_message(chatid, f'{emoji.ROBOT} Sorry my owner wants me back home and I have to leave now...')
+    await m.reply_text(f'{emoji.ROBOT} Left {cnt} voice chats.')
+
+
+@Client.on_message(main_filter
+                   & filters.regex("^!vc$")
+                   & global_admins_filter)
 async def list_voice_chat(_, m: Message):
     if not MUSIC_PLAYERS:
         await m.reply_text(f"{emoji.CROSS_MARK} **currently not in any voice chat!**")
@@ -440,7 +465,8 @@ async def resume_playing(_, m: Message):
 
 
 @Client.on_message(main_filter
-                   & filters.regex("^!clean$"))
+                   & filters.regex("^!clean$")
+                   & global_admins_filter)
 async def clean_raw_pcm(client, m: Message):
     count = _clean_files(client)
     reply = await m.reply_text(f"{emoji.WASTEBASKET} cleaned {count} files")

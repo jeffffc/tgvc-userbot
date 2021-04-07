@@ -4,6 +4,8 @@ import psutil
 from psutil._common import bytes2human
 from pyrogram import Client, filters
 
+from userbot import global_admins_filter
+
 self_or_contact_filter = filters.create(
     lambda
     _,
@@ -79,6 +81,7 @@ async def generate_sysinfo(workdir):
 
 
 @Client.on_message(filters.group
+                   & global_admins_filter
                    & filters.text
                    & ~filters.edited
                    & ~filters.via_bot
