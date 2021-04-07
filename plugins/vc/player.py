@@ -535,7 +535,7 @@ async def process_youtube_link(youtube_link, client: Client, original_message: M
     if not os.path.isfile(raw_file):
         ydl.process_info(info_dict)
         audio_file = ydl.prepare_filename(info_dict)
-        ffmpeg.input(audio_file).output(
+        ffmpeg.input(audio_file).filter('volume', 0.1).output(
             raw_file,
             format='s16le',
             acodec='pcm_s16le',
@@ -610,7 +610,7 @@ async def download_audio(mp: MusicPlayer, m: Message):
                             f"{m.audio.file_unique_id}.raw")
     if not os.path.isfile(raw_file):
         original_file = await m.download()
-        ffmpeg.input(original_file).output(
+        ffmpeg.input(original_file).filter('volume', 0.1).output(
             raw_file,
             format='s16le',
             acodec='pcm_s16le',
