@@ -6,3 +6,4 @@ pytgcalls
 wheel
 youtube_dl
 Pillow
+youtube_search

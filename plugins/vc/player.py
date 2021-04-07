@@ -25,6 +25,7 @@ from pyrogram.methods.messages.download_media import DEFAULT_DOWNLOAD_DIR
 from pytgcalls import GroupCall
 import ffmpeg
 from youtube_dl import YoutubeDL
+from youtube_search import YoutubeSearch
 from typing import Optional, List, Dict
 
 DELETE_DELAY = 8
@@ -237,6 +238,52 @@ async def play_track(client, m: Message):
         await m.delete()
 
 
+async def process_youtube_link(youtube_link, client: Client, original_message: Message,
+                               processing_message: Message, mp: MusicPlayer):
+    ydl_opts = {
+        'format': 'bestaudio',
+        'outtmpl': '%(title)s - %(extractor)s-%(id)s.%(ext)s',
+    }
+    ydl = YoutubeDL(ydl_opts)
+    info_dict = ydl.extract_info(youtube_link, download=False)
+
+    if info_dict['duration'] > MUSIC_MAX_LENGTH:
+        readable_max_length = str(timedelta(seconds=MUSIC_MAX_LENGTH))
+        inform = ("This won't be downloaded because its audio length is "
+                  "longer than the limit `{}` which is set by the bot"
+                  .format(readable_max_length))
+        await _reply_and_delete_later(original_message, inform,
+                                      DELAY_DELETE_INFORM)
+        return
+
+    raw_file = f'{DEFAULT_DOWNLOAD_DIR}YT_{info_dict["id"]}.raw'
+    if not os.path.isfile(raw_file):
+        ydl.process_info(info_dict)
+        audio_file = ydl.prepare_filename(info_dict)
+        ffmpeg.input(audio_file).output(
+            raw_file,
+            format='s16le',
+            acodec='pcm_s16le',
+            ac=2,
+            ar='48k',
+            loglevel='error'
+        ).overwrite_output().run()
+        os.remove(audio_file)
+    await processing_message.delete()
+    mp.playlist.append(MusicToPlay(original_message, info_dict["title"], info_dict["duration"], raw_file))
+    if len(mp.playlist) == 1:
+        mp.group_call.input_filename = os.path.join(
+            client.workdir,
+            raw_file
+        )
+        await mp.update_start_time()
+        print(f"- START PLAYING: {mp.playlist[0].title}")
+    await mp.send_playlist()
+    for track in mp.playlist[:2]:
+        if not track.file_path:
+            await download_audio(mp, track.message)
+
+
 @Client.on_message(main_filter
                    & current_vc
                    & filters.regex(REGEX_SITES)
@@ -248,50 +295,32 @@ async def music_downloader(client: Client, message: Message):
 
     processing = await message.reply_text(f"{emoji.INBOX_TRAY} Processing Youtube video...")
     try:
-        ydl_opts = {
-            'format': 'bestaudio',
-            'outtmpl': '%(title)s - %(extractor)s-%(id)s.%(ext)s',
-        }
-        ydl = YoutubeDL(ydl_opts)
-        info_dict = ydl.extract_info(message.text, download=False)
-
-        if info_dict['duration'] > MUSIC_MAX_LENGTH:
-            readable_max_length = str(timedelta(seconds=MUSIC_MAX_LENGTH))
-            inform = ("This won't be downloaded because its audio length is "
-                      "longer than the limit `{}` which is set by the bot"
-                      .format(readable_max_length))
-            await _reply_and_delete_later(message, inform,
-                                          DELAY_DELETE_INFORM)
-            return
-
-        raw_file = f'{DEFAULT_DOWNLOAD_DIR}/YT_{info_dict["id"]}.raw'
-        if not os.path.isfile(raw_file):
-            ydl.process_info(info_dict)
-            audio_file = ydl.prepare_filename(info_dict)
-            ffmpeg.input(audio_file).output(
-                raw_file,
-                format='s16le',
-                acodec='pcm_s16le',
-                ac=2,
-                ar='48k',
-                loglevel='error'
-            ).overwrite_output().run()
-            os.remove(audio_file)
-        await processing.delete()
-        mp.playlist.append(MusicToPlay(message, info_dict["title"], info_dict["duration"], raw_file))
-        if len(mp.playlist) == 1:
-            mp.group_call.input_filename = os.path.join(
-                client.workdir,
-                raw_file
-            )
-            await mp.update_start_time()
-            print(f"- START PLAYING: {mp.playlist[0].title}")
-        await mp.send_playlist()
-        for track in mp.playlist[:2]:
-            if not track.file_path:
-                await download_audio(mp, track.message)
+        await process_youtube_link(message.text, client, message, processing, mp)
     except Exception as e:
         await message.reply_text(repr(e))
+
+
+@Client.on_message(main_filter
+                   & current_vc
+                   & filters.command("search", prefixes="!"))
+async def music_searcher(client: Client, message: Message):
+    mp = MUSIC_PLAYERS.get(message.chat.id)
+    if not mp:
+        return
+
+    if len(message.command) > 1:
+        keyword = " ".join(message.command[1:])
+        searching = await message.reply_text(
+            f"{emoji.INBOX_TRAY} Searching Youtube video with keyword `{keyword}`...", parse_mode='md')
+        res = YoutubeSearch(keyword, max_results=1).to_dict()[0]
+        title = res['title']
+        suffix = res['url_suffix']
+        link = f'https://www.youtube.com{suffix}'
+        processing = await searching.edit_text(
+            f"{emoji.INBOX_TRAY} Processing Youtube search result #1 `{title}`...", 'md')
+        await process_youtube_link(link, client, message, processing, mp)
+    else:
+        await message.reply_text(f"{emoji.INBOX_TRAY} Please search by entering `!search keyword`...", parse_mode='md')
 
 
 @Client.on_message(main_filter
