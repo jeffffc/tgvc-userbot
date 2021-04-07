@@ -539,14 +539,14 @@ async def process_youtube_link(youtube_link, client: Client, original_message: M
         if not os.path.isfile(raw_file):
             ydl.process_info(info_dict)
             audio_file = ydl.prepare_filename(info_dict)
-            ffmpeg.input(audio_file).filter('loudnorm').output(
+            ffmpeg.input(audio_file).filter('volume', 0.1).output(
                 raw_file,
                 format='s16le',
                 acodec='pcm_s16le',
                 ac=2,
                 ar='48k',
                 loglevel='error'
-            ).overwrite_output().run_async(pipe_stdin=True)
+            ).overwrite_output().run()
             os.remove(audio_file)
         await processing_message.delete()
         mp.playlist.append(MusicToPlay(original_message, info_dict["title"], info_dict["duration"], raw_file))
@@ -616,7 +616,7 @@ async def download_audio(mp: MusicPlayer, m: Message):
                             f"{m.audio.file_unique_id}.raw")
     if not os.path.isfile(raw_file):
         original_file = await m.download()
-        ffmpeg.input(original_file).filter('loudnorm').output(
+        ffmpeg.input(original_file).filter('volume', 0.1).output(
             raw_file,
             format='s16le',
             acodec='pcm_s16le',
