@@ -631,15 +631,8 @@ async def download_telegram_audio(mp: MusicPlayer, m: Message, raw_file_name: st
                                 raw_file_name)
         if not os.path.isfile(raw_file):
             original_file = await m.download()
-            ffmpeg.input(original_file).filter('volume', 0.1).output(
-                raw_file,
-                format='s16le',
-                acodec='pcm_s16le',
-                ac=2,
-                ar='48k',
-                loglevel='error'
-            ).overwrite_output().run()
-            os.remove(original_file)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, ffmpeg_process, original_file, raw_file)
     except Exception as e:
         await send_text(mp, repr(e))
 
@@ -656,15 +649,10 @@ async def download_youtube_audio(mp: MusicPlayer, youtube_link: str, raw_file_na
         if not os.path.isfile(os.path.join(DEFAULT_DOWNLOAD_DIR, raw_file_name)):
             ydl.process_info(info_dict)
             audio_file = ydl.prepare_filename(info_dict)
-            ffmpeg.input(audio_file).filter('volume', 0.1).output(
-                os.path.join(DEFAULT_DOWNLOAD_DIR, raw_file_name),
-                format='s16le',
-                acodec='pcm_s16le',
-                ac=2,
-                ar='48k',
-                loglevel='error'
-            ).overwrite_output().run()
-            os.remove(audio_file)
+            raw_file = os.path.join(mp.group_call.client.workdir, DEFAULT_DOWNLOAD_DIR,
+                                    raw_file_name)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, ffmpeg_process, audio_file, raw_file)
     except Exception as e:
         await send_text(mp, repr(e))
 
@@ -697,3 +685,18 @@ def _clean_files(client: Client) -> int:
                 count += 1
                 os.remove(os.path.join(download_dir, fn))
     return count
+
+
+def ffmpeg_process(audio_file, raw_file):
+    try:
+        ffmpeg.input(audio_file).filter('volume', 0.1).output(
+            raw_file,
+            format='s16le',
+            acodec='pcm_s16le',
+            ac=2,
+            ar='48k',
+            loglevel='error'
+        ).overwrite_output().run()
+        os.remove(audio_file)
+    except Exception as e:
+        print(repr(e))
