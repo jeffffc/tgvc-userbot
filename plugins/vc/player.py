@@ -34,7 +34,7 @@ from userbot import global_admins_filter, LOG_GROUP_ID
 DELETE_DELAY = 8
 MUSIC_MAX_LENGTH = 10800
 DELAY_DELETE_INFORM = 10
-TG_THUMB_MAX_LENGTH = 320
+MAX_PLAYLIST_LENGTH = 8
 
 REGEX_SITES = (
     r"^((?:https?:)?\/\/)"
@@ -198,6 +198,11 @@ async def play_track(client, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     group_call = mp.group_call
     playlist = mp.playlist
+    # check playlist length
+    if len(playlist) >= MAX_PLAYLIST_LENGTH:
+        await _reply_and_delete_later(m, f'{emoji.CROSS_MARK} There are already {MAX_PLAYLIST_LENGTH} songs in'
+                                         f'the playlist, cannot add more!', DELETE_DELAY)
+        return
     # check audio
     if m.audio:
         if m.audio.duration > 600:
@@ -294,6 +299,12 @@ async def add_youtube_to_playlist(client: Client, message: Message, yt_link: str
 
     playlist = mp.playlist
     group_call = mp.group_call
+
+    # check playlist length
+    if len(playlist) >= MAX_PLAYLIST_LENGTH:
+        await _reply_and_delete_later(message, f'{emoji.CROSS_MARK} There are already {MAX_PLAYLIST_LENGTH} songs in'
+                                               f'the playlist, cannot add more!', DELETE_DELAY)
+        return
 
     ydl = YoutubeDL()
     info_dict = ydl.extract_info(yt_link, download=False)
@@ -620,10 +631,11 @@ async def send_text(mp: MusicPlayer, text: str, chat: int = None):
 
 async def log(mp: MusicPlayer, e: Exception):
     message = await send_text(mp, f'Error occured: {repr(e)}\nI have notified my owner about it already!')
-    log_message = await send_text(mp,
-                                  f'Error occured at {mp.chat_id}:\n' +
-                                  "".join(traceback.TracebackException.from_exception(e).format()),
-                                  LOG_GROUP_ID)
+    await send_text(mp,
+                    f'Error occured at {mp.chat_id}:\n<code>' +
+                    "".join(traceback.TracebackException.from_exception(e).format()) +
+                    '</code>',
+                    LOG_GROUP_ID)
     return message
 
 
