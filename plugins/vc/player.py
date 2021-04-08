@@ -684,10 +684,18 @@ async def skip_current_playing(mp: MusicPlayer):
         return
     client = group_call.client
     download_dir = os.path.join(client.workdir, DEFAULT_DOWNLOAD_DIR)
-    group_call.input_filename = os.path.join(
+    file_path = os.path.join(
         download_dir,
         playlist[1].raw_file_name
     )
+
+    if not os.path.isfile(file_path):
+        group_call.input_filename = ''
+        await download_audio(mp, playlist[0])
+        while not os.path.isfile(file_path):
+            await asyncio.sleep(2)
+
+    group_call.input_filename = file_path
     await mp.update_start_time()
     # remove old track from playlist
     playlist.pop(0)
