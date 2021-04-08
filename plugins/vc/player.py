@@ -27,8 +27,9 @@ import ffmpeg
 from youtube_dl import YoutubeDL
 from youtube_search import YoutubeSearch
 from typing import Optional, List, Dict
+import traceback
 
-from userbot import global_admins_filter
+from userbot import global_admins_filter, LOG_GROUP_ID
 
 DELETE_DELAY = 8
 MUSIC_MAX_LENGTH = 10800
@@ -275,7 +276,7 @@ async def youtube_searcher(client: Client, message: Message):
         try:
             res = await loop.run_in_executor(None, search_youtube, keyword)
         except Exception as e:
-            await message.reply_text(repr(e))
+            await log(mp, e)
             return
         suffix = res['url_suffix']
         link = f'https://www.youtube.com{suffix}'
@@ -576,16 +577,25 @@ def search_youtube(keyword):
     return YoutubeSearch(keyword, max_results=1).to_dict()[0]
 
 
-async def send_text(mp: MusicPlayer, text: str):
+async def send_text(mp: MusicPlayer, text: str, chat: int = None):
     group_call = mp.group_call
     client = group_call.client
-    chat_id = mp.chat_id
+    chat_id = chat or mp.chat_id
     message = await client.send_message(
         chat_id,
         text,
         disable_web_page_preview=True,
         disable_notification=True
     )
+    return message
+
+
+async def log(mp: MusicPlayer, e: Exception):
+    message = await send_text(mp, f'Error occured: {repr(e)}\nI have notified my owner about it already!')
+    log_message = await send_text(mp,
+                                  f'Error occured at {mp.chat_id}:\n' +
+                                  "".join(traceback.TracebackException.from_exception(e).format()),
+                                  LOG_GROUP_ID)
     return message
 
 
@@ -634,7 +644,7 @@ async def download_telegram_audio(mp: MusicPlayer, m: Message, raw_file_name: st
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, ffmpeg_process, original_file, raw_file)
     except Exception as e:
-        await send_text(mp, repr(e))
+        await log(mp, e)
 
 
 async def download_youtube_audio(mp: MusicPlayer, youtube_link: str, raw_file_name: str):
@@ -654,7 +664,7 @@ async def download_youtube_audio(mp: MusicPlayer, youtube_link: str, raw_file_na
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, ffmpeg_process, audio_file, raw_file)
     except Exception as e:
-        await send_text(mp, repr(e))
+        await log(mp, e)
 
 
 async def _delay_delete_messages(messages: tuple, delay: int):

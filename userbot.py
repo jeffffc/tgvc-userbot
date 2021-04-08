@@ -5,6 +5,7 @@ GLOBAL_ADMINS = [
     106665913,
     295152997
 ]
+LOG_GROUP_ID = -1001243367957
 
 global_admins_filter = (
     filters.incoming & filters.user(GLOBAL_ADMINS)
