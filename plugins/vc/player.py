@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 from pyrogram import Client, filters, emoji
 from pyrogram.types import Message
 from pyrogram.methods.messages.download_media import DEFAULT_DOWNLOAD_DIR
+from pyrogram.raw.base import GroupCallParticipant
 from pytgcalls import GroupCall
 import ffmpeg
 from youtube_dl import YoutubeDL
@@ -125,7 +126,17 @@ async def network_status_changed_handler(gc: GroupCall, is_connected: bool):
 async def playout_ended_handler(group_call: GroupCall, _):
     chat_id = int("-100" + str(group_call.full_chat.id))
     mp = MUSIC_PLAYERS.get(chat_id)
-    await skip_current_playing(mp)
+    if not mp:
+        return
+
+    ps: List[GroupCallParticipant] = await group_call.get_group_call_participants()
+    if any((x for x in ps if not x.is_self)):  # if anyone is still listening, head on to the next song
+        await skip_current_playing(mp)
+    else:                                      # otherwise, stop playout (but stay in the voice chat)
+        mp.playlist.clear()
+        group_call.input_filename = ''
+        await send_text(mp, f'{emoji.ROBOT} I stopped playing because nobody is listening anymore!')
+        _clean_files(group_call.client)
 
 
 # - classes
