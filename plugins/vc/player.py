@@ -202,6 +202,21 @@ MUSIC_PLAYERS: Dict[int, MusicPlayer] = {}
 
 # - Pyrogram handlers
 
+
+# Workaround for messages being received twice for some unknown reason. If a message has been handled before, ignore it
+LAST_MESSAGE_ID: Dict[int, int] = {}
+
+
+@Client.on_message(filters.group & ~filters.edited, group=-1)
+def avoid_receiving_messages_twice(_, m: Message):
+    last_id = LAST_MESSAGE_ID.get(m.chat.id)
+    if last_id and m.message_id <= last_id:
+        m.stop_propagation()
+    LAST_MESSAGE_ID[m.chat.id] = m.message_id
+
+
+# Commands
+
 @Client.on_message(
     filters.group
     & ~filters.edited
