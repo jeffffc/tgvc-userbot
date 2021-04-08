@@ -571,6 +571,34 @@ async def show_repository(_, m: Message):
     await m.delete()
 
 
+@Client.on_message(filters.command("joingroup", prefixes='!')
+                   & global_admins_filter)
+async def join_group(c: Client, m: Message):
+    # join chat by link, supergroup/channel username, or chat id
+    if len(m.command) > 1:
+        link = m.command[1]
+        try:
+            await c.join_chat(link)
+        except Exception as e:
+            await m.reply_text(repr(e))
+    else:
+        await m.reply_text('Please provide a link, supergroup/channel username or chat id.')
+
+
+@Client.on_message(filters.command("leavegroup", prefixes='!')
+                   & global_admins_filter)
+async def leave_group(c: Client, m: Message):
+    # leave by supergroup/channel username, or chat id
+    if len(m.command) > 1:
+        link = m.command[1]
+        try:
+            await c.leave_chat(link)
+        except Exception as e:
+            await m.reply_text(repr(e))
+    else:
+        await m.reply_text('Please provide a supergroup/channel username or chat id.')
+
+
 # - Other functions
 def search_youtube(keyword):
     # search youtube with specific keyword and return top #1 result
