@@ -169,14 +169,17 @@ class MusicPlayer(object):
         playlist = self.playlist
         if not playlist:
             pl = f"{emoji.NO_ENTRY} empty playlist"
+        elif len(playlist) == 1:
+            pl = f"{emoji.REPEAT_SINGLE_BUTTON} **Currently playing:**\n" \
+                 f"**[{playlist[0].title}]({playlist[0].link or playlist[0].message.link})**"
         else:
-            if len(playlist) == 1:
-                pl = f"{emoji.REPEAT_SINGLE_BUTTON} **Playlist**:\n"
-            else:
-                pl = f"{emoji.PLAY_BUTTON} **Playlist**:\n"
+            pl = f"{emoji.PLAY_BUTTON} **Currently playing:**\n" \
+                 f"**[{playlist[0].title}]({playlist[0].link or playlist[0].message.link})**\n\n" \
+                 f"{emoji.PLAY_BUTTON} **Playlist:**\n"
+
             pl += "\n".join([
-                f"**{i}**. **[{x.title}]({x.message.link})**"
-                for i, x in enumerate(playlist)
+                f"**{i + 1}**. **[{x.title}]({x.link or x.message.link})**"
+                for i, x in enumerate(playlist[1:])
             ])
         if mp.msg.get('playlist') is not None:
             await mp.msg['playlist'].delete()
@@ -200,7 +203,7 @@ async def play_track(client, m: Message):
     playlist = mp.playlist
     # check playlist length
     if len(playlist) >= MAX_PLAYLIST_LENGTH:
-        await _reply_and_delete_later(m, f'{emoji.CROSS_MARK} There are already {MAX_PLAYLIST_LENGTH} songs in'
+        await _reply_and_delete_later(m, f'{emoji.CROSS_MARK} There are already {MAX_PLAYLIST_LENGTH} songs in '
                                          f'the playlist, cannot add more!', DELETE_DELAY)
         return
     # check audio
@@ -273,6 +276,12 @@ async def youtube_searcher(client: Client, message: Message):
     if not mp:
         return
 
+    # check playlist length
+    if len(mp.playlist) >= MAX_PLAYLIST_LENGTH:
+        await _reply_and_delete_later(message, f'{emoji.CROSS_MARK} There are already {MAX_PLAYLIST_LENGTH} songs in '
+                                               f'the playlist, cannot add more!', DELETE_DELAY)
+        return
+
     if len(message.command) > 1:
         keyword = " ".join(message.command[1:])
         searching = await message.reply_text(
@@ -302,7 +311,7 @@ async def add_youtube_to_playlist(client: Client, message: Message, yt_link: str
 
     # check playlist length
     if len(playlist) >= MAX_PLAYLIST_LENGTH:
-        await _reply_and_delete_later(message, f'{emoji.CROSS_MARK} There are already {MAX_PLAYLIST_LENGTH} songs in'
+        await _reply_and_delete_later(message, f'{emoji.CROSS_MARK} There are already {MAX_PLAYLIST_LENGTH} songs in '
                                                f'the playlist, cannot add more!', DELETE_DELAY)
         return
 
