@@ -32,7 +32,7 @@ from pytgcalls import GroupCall
 from youtube_dl import YoutubeDL
 from youtube_search import YoutubeSearch
 
-from userbot import cache, global_admins_filter, LOG_GROUP_ID, COMMAND_PREFIX
+from userbot import cache, GLOBAL_ADMINS, global_admins_filter, LOG_GROUP_ID, COMMAND_PREFIX
 
 DELETE_DELAY = 8
 MUSIC_MAX_LENGTH = 10800
@@ -108,7 +108,7 @@ async def group_admin_filter_func(_, client: Client, message: Message):
 group_admin_filter = global_admins_filter | filters.create(group_admin_filter_func)
 
 
-async def get_chat_admins(c: Client, chat_id: int):
+async def get_chat_admins(c: Client, chat_id: int) -> List[int]:
     """Returns a list of admin IDs for a given chat. Results are cached for 30 mins."""
     cached_admins = await cache.get(chat_id)
     if not cached_admins:
@@ -170,8 +170,9 @@ async def playout_ended_handler(group_call: GroupCall, _):
 
 
 class MusicToPlay(object):
-    def __init__(self, m: Message, title: str, duration: int, raw_file_name: str, link: Optional[str]):
+    def __init__(self, m: Message, added_by: int, title: str, duration: int, raw_file_name: str, link: Optional[str]):
         self.message = m
+        self.added_by = added_by
         self.title = title
         self.duration = duration
         self.raw_file_name = raw_file_name
@@ -291,7 +292,7 @@ async def play_track(client, m: Message):
         await _delay_delete_messages((reply, m), DELETE_DELAY)
         return
     # add to playlist
-    to_play = MusicToPlay(m_audio, m_audio.audio.title,
+    to_play = MusicToPlay(m_audio, m.from_user.id, m_audio.audio.title,
                           m_audio.audio.duration, f'TG_{m_audio.audio.file_unique_id}.raw', None)
     playlist.append(to_play)
     if len(playlist) == 1:
@@ -412,7 +413,7 @@ async def add_youtube_to_playlist(client: Client, message: Message, yt_link: str
         await _delay_delete_messages((reply, message), DELETE_DELAY)
         return
     # add to playlist
-    to_play = MusicToPlay(message, yt_title, yt_duration, f'YT_{yt_id}.raw', yt_link)
+    to_play = MusicToPlay(message, message.from_user.id, yt_title, yt_duration, f'YT_{yt_id}.raw', yt_link)
     playlist.append(to_play)
     if len(playlist) == 1:
         m_status = await message.reply_text(
@@ -470,13 +471,19 @@ async def show_help(_, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.command("skip", prefixes=COMMAND_PREFIX)
-                   & group_admin_filter)
-async def skip_track(_, m: Message):
+                   & filters.command("skip", prefixes=COMMAND_PREFIX))
+async def skip_track(c: Client, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     playlist = mp.playlist
     if len(m.command) == 1:
-        await skip_current_playing(mp)
+        to_skip = playlist[0]
+        if to_skip.added_by == m.from_user.id \
+                or m.from_user.id in GLOBAL_ADMINS \
+                or m.from_user.id in await get_chat_admins(c, m.chat.id):
+            await skip_current_playing(mp)
+        else:
+            await m.reply(f"{emoji.NO_ENTRY} You can't skip songs that someone else added!")
+            return
     else:
         try:
             items = list(dict.fromkeys(m.command[1:]))
@@ -485,12 +492,18 @@ async def skip_track(_, m: Message):
             text = []
             for i in items:
                 if 2 <= i <= (len(playlist) - 1):
-                    audio = f"[{playlist[i].title}]({playlist[i].message.link})"
-                    playlist.pop(i)
-                    text.append(f"{emoji.WASTEBASKET} {i}. **{audio}**")
+                    to_skip = playlist[i]
+                    audio = f"[{to_skip.title}]({to_skip.link or to_skip.message.link})"
+                    if to_skip.added_by == m.from_user.id \
+                            or m.from_user.id in GLOBAL_ADMINS \
+                            or m.from_user.id in await get_chat_admins(c, m.chat.id):
+                        playlist.pop(i)
+                        text.append(f"{emoji.WASTEBASKET} {i}. **{audio}**")
+                    else:
+                        text.append(f"{emoji.NO_ENTRY} {i}: You can't skip songs that somoene else added!")
                 else:
                     text.append(f"{emoji.CROSS_MARK} {i}")
-            reply = await m.reply_text("\n".join(text))
+            reply = await m.reply_text("\n".join(text), disable_web_page_preview=True)
             await mp.send_playlist()
         except (ValueError, TypeError):
             reply = await m.reply_text(f"{emoji.NO_ENTRY} invalid input",
