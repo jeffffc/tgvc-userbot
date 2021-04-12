@@ -107,7 +107,7 @@ async def group_admin_filter_func(_, client: Client, message: Message):
         await message.reply_text(f'{emoji.NO_ENTRY} This command can only be used by a group admin.')
     return is_admin
 
-group_admin_filter = filters.create(group_admin_filter_func)
+group_admin_filter = global_admins_filter | filters.create(group_admin_filter_func)
 
 
 async def get_chat_admins(c: Client, chat_id: int):
