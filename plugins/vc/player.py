@@ -346,7 +346,15 @@ async def youtube_searcher(client: Client, message: Message):
         tries = 0
         while res is None and tries < 3:
             try:
-                res = await loop.run_in_executor(None, search_youtube, keyword)
+                # cache youtube search result
+                cachekey = 'youtube:' + keyword.lower()
+                res = await cache.get(cachekey)
+                if not res:
+                    logging.info(f'Youtube search keyword "{keyword}" not cached, caching now')
+                    res = await loop.run_in_executor(None, search_youtube, keyword)
+                    await cache.set(cachekey, res)
+                else:
+                    logging.info(f'Youtube search keyword "{keyword}" cached, using cached result')
             except IndexError as e:
                 # Really no result
                 await searching.edit_text(f'{emoji.ROBOT} '
