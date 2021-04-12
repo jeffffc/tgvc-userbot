@@ -342,11 +342,24 @@ async def youtube_searcher(client: Client, message: Message):
         searching = await message.reply_text(
             f"{emoji.INBOX_TRAY} Searching Youtube video with keyword `{keyword}`...", parse_mode='md')
         loop = asyncio.get_event_loop()
-        try:
-            res = await loop.run_in_executor(None, search_youtube, keyword)
-        except Exception as e:
-            await log(mp, e)
-            return
+        res = None
+        tries = 0
+        while res is None and tries < 3:
+            try:
+                res = await loop.run_in_executor(None, search_youtube, keyword)
+            except IndexError as e:
+                # Really no result
+                await searching.edit_text(f'{emoji.ROBOT} '
+                                          f'Sorry, I can find nothing on youtube with the keyword `{keyword}`',
+                                          parse_mode='md')
+                return
+            except Exception as e:
+                # unknown error, try 3 times max
+                tries += 1
+                if tries == 3:
+                    await log(mp, e)
+                    return
+
         suffix = res['url_suffix']
         link = f'https://www.youtube.com{suffix}'
 
