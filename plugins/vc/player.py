@@ -603,7 +603,8 @@ async def restart_playing(_, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.command('pause', prefixes=COMMAND_PREFIX))
+                   & filters.command('pause', prefixes=COMMAND_PREFIX)
+                   & group_admin_filter)
 async def pause_playing(_, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     mp.group_call.pause_playout()
@@ -616,7 +617,8 @@ async def pause_playing(_, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.command('resume', prefixes=COMMAND_PREFIX))
+                   & filters.command('resume', prefixes=COMMAND_PREFIX)
+                   & group_admin_filter)
 async def resume_playing(_, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     mp.group_call.resume_playout()
