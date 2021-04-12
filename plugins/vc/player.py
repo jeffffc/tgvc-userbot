@@ -18,7 +18,7 @@ How to use:
 """
 import asyncio
 import logging
-import os
+import os, signal
 import traceback
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
@@ -738,6 +738,20 @@ async def cache_chat_admin(c: Client, m: Message):
     await cache.delete(m.chat.id)
     await get_chat_admins(c, m.chat.id)
     await m.reply_text('Admin cache refreshed.')
+
+
+@Client.on_message(main_filter
+                   & filters.command('halt', prefixes=COMMAND_PREFIX)
+                   & global_admins_filter)
+async def halt_bot(c: Client, m: Message):
+    # shutting down bot, need to save all playlists and leave all chats first
+    logging.info('Ready to shut down bot on request - Start saving running playlist for restore on restart')
+    # await m.reply_text('will save playlist here, sending a message here for now as a placeholder')
+    logging.info('Saving playlist finished, will force quit all vc now')
+    await leave_all_voice_chat(c, m)
+    # send keyboard interrupt
+    logging.info('Left all vc, mimic Ctrl+c to shut the bot down')
+    os.kill(os.getpid(), signal.SIGINT)
 
 
 # - Other functions
