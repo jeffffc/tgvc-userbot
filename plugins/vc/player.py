@@ -16,25 +16,23 @@ How to use:
   can use the !play command now
 - check !help for more commands
 """
-import os
 import asyncio
+import logging
+import os
+import traceback
 from datetime import datetime, timedelta
+from typing import Optional, List, Dict
+
+import ffmpeg
 from pyrogram import Client, filters, emoji
-from pyrogram.types import Message, ChatMember
 from pyrogram.methods.messages.download_media import DEFAULT_DOWNLOAD_DIR
 from pyrogram.raw.base import GroupCallParticipant
+from pyrogram.types import Message, ChatMember
 from pytgcalls import GroupCall
-import ffmpeg
 from youtube_dl import YoutubeDL
 from youtube_search import YoutubeSearch
-from typing import Optional, List, Dict
-import traceback
 
-from userbot import global_admins_filter, LOG_GROUP_ID, COMMAND_PREFIX
-
-from aiocache import cached
-from userbot import cache
-import logging
+from userbot import cache, global_admins_filter, LOG_GROUP_ID, COMMAND_PREFIX
 
 DELETE_DELAY = 8
 MUSIC_MAX_LENGTH = 10800
@@ -343,9 +341,9 @@ async def youtube_searcher(client: Client, message: Message):
         searching = await message.reply_text(
             f"{emoji.INBOX_TRAY} Searching Youtube video with keyword `{keyword}`...", parse_mode='md')
         loop = asyncio.get_event_loop()
-        res = None
+        res: Optional[Dict] = None
         tries = 0
-        while res is None and tries < 3:
+        while res is None:
             try:
                 # cache youtube search result
                 cachekey = 'youtube:' + keyword.lower()
@@ -356,7 +354,7 @@ async def youtube_searcher(client: Client, message: Message):
                     await cache.set(cachekey, res)
                 else:
                     logging.info(f'Youtube search keyword "{keyword}" cached, using cached result')
-            except IndexError as e:
+            except IndexError:
                 # Really no result
                 await searching.edit_text(f'{emoji.ROBOT} '
                                           f'Sorry, I can find nothing on youtube with the keyword `{keyword}`',
@@ -720,7 +718,7 @@ async def cache_chat_admin(c: Client, m: Message):
 
 
 # - Other functions
-def search_youtube(keyword):
+def search_youtube(keyword) -> Dict:
     # search youtube with specific keyword and return top #1 result
     return YoutubeSearch(keyword, max_results=1).to_dict()[0]
 
@@ -838,7 +836,7 @@ async def _reply_and_delete_later(message: Message, text: str, delay: int):
 
 def _clean_files(client: Client) -> int:
     download_dir = os.path.join(client.workdir, DEFAULT_DOWNLOAD_DIR)
-    all_fn = os.listdir(download_dir)
+    all_fn: List[str] = os.listdir(download_dir)
     for mp in MUSIC_PLAYERS.values():
         for track in mp.playlist[:2]:
             track_fn = track.raw_file_name
