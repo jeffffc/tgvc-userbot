@@ -261,11 +261,6 @@ async def play_track(client, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     group_call = mp.group_call
     playlist = mp.playlist
-    # check playlist length
-    if len(playlist) >= MAX_PLAYLIST_LENGTH:
-        await _reply_and_delete_later(m, f'{emoji.CROSS_MARK} There are already {MAX_PLAYLIST_LENGTH} songs in '
-                                         f'the playlist, cannot add more!', DELETE_DELAY)
-        return
     # check audio
     if m.audio:
         if m.audio.duration > MUSIC_MAX_LENGTH_NONADMIN:
@@ -288,6 +283,11 @@ async def play_track(client, m: Message):
     else:
         await mp.send_playlist()
         await m.delete()
+        return
+    # check playlist length
+    if len(playlist) >= MAX_PLAYLIST_LENGTH:
+        await _reply_and_delete_later(m, f'{emoji.CROSS_MARK} There are already {MAX_PLAYLIST_LENGTH} songs in '
+                                         f'the playlist, cannot add more!', DELETE_DELAY)
         return
     max_length = MUSIC_MAX_LENGTH if await is_from_admin(client, m) else MUSIC_MAX_LENGTH_NONADMIN
     if m_audio.audio.duration > max_length:
@@ -609,7 +609,8 @@ async def stop_playing(c: Client, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.command('replay', prefixes=COMMAND_PREFIX))
+                   & filters.command('replay', prefixes=COMMAND_PREFIX)
+                   & group_admin_filter)
 async def restart_playing(_, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     group_call = mp.group_call
@@ -758,7 +759,7 @@ async def send_text(mp: MusicPlayer, text: str, chat: int = None):
     return message
 
 
-async def log(mp: MusicPlayer, e: Exception):
+async def log(mp: MusicPlayer, e: Exception) -> Message:
     message = await send_text(mp, f'Error occured: {repr(e)}\nI have notified my owner about it already!')
     await send_text(mp,
                     f'Error occured at {mp.chat_id}:\n<code>' +
