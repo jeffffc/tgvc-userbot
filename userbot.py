@@ -1,11 +1,16 @@
 import logging
 from pyrogram import Client, idle, filters
+from aiocache import Cache
+import os
+
+from plugins.vc.player import leave_all_voice_chat
 
 GLOBAL_ADMINS = [
     106665913,
     295152997
 ]
 LOG_GROUP_ID = -1001243367957
+COMMAND_PREFIX = '$' if os.environ.get('DEBUG') else '!'
 
 global_admins_filter = (
     filters.incoming & filters.user(GLOBAL_ADMINS)
@@ -13,6 +18,7 @@ global_admins_filter = (
 
 app = Client("test")
 logging.basicConfig(level=logging.INFO)
+cache = Cache(Cache.MEMORY)
 app.start()
 print('>>> USERBOT STARTED')
 idle()

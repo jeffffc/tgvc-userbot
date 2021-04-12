@@ -20,7 +20,7 @@ import os
 import asyncio
 from datetime import datetime, timedelta
 from pyrogram import Client, filters, emoji
-from pyrogram.types import Message
+from pyrogram.types import Message, ChatMember
 from pyrogram.methods.messages.download_media import DEFAULT_DOWNLOAD_DIR
 from pyrogram.raw.base import GroupCallParticipant
 from pytgcalls import GroupCall
@@ -30,7 +30,11 @@ from youtube_search import YoutubeSearch
 from typing import Optional, List, Dict
 import traceback
 
-from userbot import global_admins_filter, LOG_GROUP_ID
+from userbot import global_admins_filter, LOG_GROUP_ID, COMMAND_PREFIX
+
+from aiocache import cached
+from userbot import cache
+import logging
 
 DELETE_DELAY = 8
 MUSIC_MAX_LENGTH = 10800
@@ -94,6 +98,28 @@ self_or_contact_filter = filters.create(
     message:
     (message.from_user and message.from_user.is_contact) or message.outgoing
 )
+
+
+async def group_admin_filter_func(_, client: Client, message: Message):
+    admins = await get_chat_admins(client, message.chat.id)
+    return message.from_user.id in admins
+
+group_admin_filter = filters.create(group_admin_filter_func)
+
+
+async def get_chat_admins(c: Client, chat_id: int):
+    """Returns a list of admin IDs for a given chat. Results are cached for 30 mins."""
+    cached_admins = await cache.get(chat_id)
+    if not cached_admins:
+        logging.info(f'Not cached for chat {chat_id}. Getting admin list now...')
+        admins: List[ChatMember] = await c.get_chat_members(chat_id, filter='administrators')
+        logging.info(f'Finish caching admin list for chat {chat_id}')
+        admin_ids = [admin.user.id for admin in admins]
+        await cache.set(chat_id, admin_ids)
+        return admin_ids
+    else:
+        logging.info(f'Getting admin list for chat {chat_id} from cache')
+        return cached_admins
 
 
 async def current_vc_filter(_, __, m: Message):
@@ -221,7 +247,7 @@ def avoid_receiving_messages_twice(_, m: Message):
     filters.group
     & ~filters.edited
     & current_vc
-    & (filters.regex("^(\\/|!)play$") | filters.audio)
+    & (filters.command('play', prefixes=[COMMAND_PREFIX, '/']) | filters.audio)
 )
 async def play_track(client, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
@@ -296,7 +322,7 @@ async def youtube_player(client: Client, message: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.command("search", prefixes="!"))
+                   & filters.command("search", prefixes=COMMAND_PREFIX))
 async def youtube_searcher(client: Client, message: Message):
     mp = MUSIC_PLAYERS.get(message.chat.id)
     if not mp:
@@ -385,7 +411,7 @@ async def add_youtube_to_playlist(client: Client, message: Message, yt_link: str
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.regex("^(\\/|!)current$"))
+                   & filters.command('current', prefixes=[COMMAND_PREFIX, '/']))
 async def show_current_playing_time(_, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     start_time = mp.start_time
@@ -407,7 +433,7 @@ async def show_current_playing_time(_, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.regex("^(\\/|!)help$"))
+                   & filters.command('help', prefixes=[COMMAND_PREFIX, '/']))
 async def show_help(_, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     if mp.msg.get('help') is not None:
@@ -418,7 +444,7 @@ async def show_help(_, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.command("skip", prefixes="!"))
+                   & filters.command("skip", prefixes=COMMAND_PREFIX))
 async def skip_track(_, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     playlist = mp.playlist
@@ -446,7 +472,8 @@ async def skip_track(_, m: Message):
 
 
 @Client.on_message(main_filter
-                   & filters.regex("^!join$"))
+                   & filters.command('join', prefixes=COMMAND_PREFIX)
+                   & group_admin_filter)
 async def join_group_call(client, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     if mp and mp.group_call.is_connected:
@@ -465,7 +492,8 @@ async def join_group_call(client, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.command('leave', prefixes='!'))
+                   & filters.command('leave', prefixes=COMMAND_PREFIX)
+                   & group_admin_filter)
 async def leave_voice_chat(c: Client, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     group_call = mp.group_call
@@ -479,7 +507,7 @@ async def leave_voice_chat(c: Client, m: Message):
 
 
 @Client.on_message(main_filter
-                   & filters.command('leaveall', prefixes='!')
+                   & filters.command('leaveall', prefixes=COMMAND_PREFIX)
                    & global_admins_filter)
 async def leave_all_voice_chat(c: Client, m: Message):
     cnt = len(MUSIC_PLAYERS)
@@ -499,7 +527,7 @@ async def leave_all_voice_chat(c: Client, m: Message):
 
 
 @Client.on_message(main_filter
-                   & filters.command('vc', prefixes='!')
+                   & filters.command('vc', prefixes=COMMAND_PREFIX)
                    & global_admins_filter)
 async def list_voice_chat(_, m: Message):
     if not MUSIC_PLAYERS:
@@ -515,7 +543,7 @@ async def list_voice_chat(_, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.regex("^!stop$"))
+                   & filters.command('stop', prefixes=COMMAND_PREFIX))
 async def stop_playing(c: Client, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     group_call = mp.group_call
@@ -529,7 +557,7 @@ async def stop_playing(c: Client, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.regex("^!replay$"))
+                   & filters.command('replay', prefixes=COMMAND_PREFIX))
 async def restart_playing(_, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     group_call = mp.group_call
@@ -546,7 +574,7 @@ async def restart_playing(_, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.regex("^!pause"))
+                   & filters.command('pause', prefixes=COMMAND_PREFIX))
 async def pause_playing(_, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     mp.group_call.pause_playout()
@@ -559,7 +587,7 @@ async def pause_playing(_, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.regex("^!resume"))
+                   & filters.command('resume', prefixes=COMMAND_PREFIX))
 async def resume_playing(_, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     mp.group_call.resume_playout()
@@ -572,7 +600,7 @@ async def resume_playing(_, m: Message):
 
 
 @Client.on_message(main_filter
-                   & filters.regex("^!clean$")
+                   & filters.command('clean', prefixes=COMMAND_PREFIX)
                    & global_admins_filter)
 async def clean_raw_pcm(client, m: Message):
     count = _clean_files(client)
@@ -582,7 +610,8 @@ async def clean_raw_pcm(client, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.regex("^!mute$"))
+                   & filters.command('mute', prefixes=COMMAND_PREFIX)
+                   & group_admin_filter)
 async def mute(_, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     group_call = mp.group_call
@@ -593,7 +622,8 @@ async def mute(_, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.regex("^!unmute$"))
+                   & filters.command('unmute', prefixes=COMMAND_PREFIX)
+                   & group_admin_filter)
 async def unmute(_, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     group_call = mp.group_call
@@ -604,7 +634,7 @@ async def unmute(_, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.regex("^(\\/|!)repo$"))
+                   & filters.command('repo', prefixes=[COMMAND_PREFIX, '/']))
 async def show_repository(_, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     if mp.msg.get('repo') is not None:
@@ -617,7 +647,7 @@ async def show_repository(_, m: Message):
     await m.delete()
 
 
-@Client.on_message(filters.command("joingroup", prefixes='!')
+@Client.on_message(filters.command("joingroup", prefixes=COMMAND_PREFIX)
                    & global_admins_filter)
 async def join_group(c: Client, m: Message):
     # join chat by link, supergroup/channel username, or chat id
@@ -631,7 +661,7 @@ async def join_group(c: Client, m: Message):
         await m.reply_text('Please provide a link, supergroup/channel username or chat id.')
 
 
-@Client.on_message(filters.command("leavegroup", prefixes='!')
+@Client.on_message(filters.command("leavegroup", prefixes=COMMAND_PREFIX)
                    & global_admins_filter)
 async def leave_group(c: Client, m: Message):
     # leave by supergroup/channel username, or chat id
@@ -643,6 +673,16 @@ async def leave_group(c: Client, m: Message):
             await m.reply_text(repr(e))
     else:
         await m.reply_text('Please provide a supergroup/channel username or chat id.')
+
+
+@Client.on_message(main_filter
+                   & filters.command('cache', prefixes=COMMAND_PREFIX)
+                   & group_admin_filter)
+async def cache_chat_admin(c: Client, m: Message):
+    logging.info(f'Cleaning admin list cache for chat {m.chat.id}')
+    await cache.delete(m.chat.id)
+    await get_chat_admins(c, m.chat.id)
+    await m.reply_text('Admin cache refreshed.')
 
 
 # - Other functions
