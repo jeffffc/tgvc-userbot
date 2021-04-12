@@ -197,6 +197,7 @@ class MusicPlayer(object):
         self.start_time = None
         self.playlist: List[MusicToPlay] = []
         self.msg = {}
+        self.join_voice_chat_time = datetime.utcnow()
 
     async def update_start_time(self, reset=False):
         self.start_time = (
@@ -564,7 +565,9 @@ async def list_voice_chat(_, m: Message):
 
     await m.reply_text(
             f"{emoji.MUSICAL_NOTES} **currently in the voice chat(s)**:\n" +
-            '\n'.join((f"{i + 1}: **{mp.chat_title} ({chat_id})**"
+            '\n'.join((f"{i + 1}: **{mp.chat_title} ({chat_id})**\n" +
+                       f'>> Uptime: ' + str(datetime.utcnow() - mp.join_voice_chat_time) + '\n' +
+                       f'>> No. of songs in queue: ' + str(len(mp.playlist))
                        for i, (chat_id, mp) in enumerate(MUSIC_PLAYERS.items())))
         )
 
