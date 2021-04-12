@@ -424,9 +424,12 @@ async def show_current_playing_time(_, m: Message):
     if mp.msg.get('current') is not None:
         await mp.msg['current'].delete()
     mp.msg['current'] = await playlist[0].message.reply_text(
+        f"**Currently Playing: **"
+        f"**[{playlist[0].title}]({playlist[0].link or playlist[0].message.link})**\n" +
         f"{emoji.PLAY_BUTTON}  {utcnow - start_time} / "
         f"{timedelta(seconds=playlist[0].duration)}",
-        disable_notification=True
+        disable_notification=True,
+        disable_web_page_preview=True
     )
     await m.delete()
 
