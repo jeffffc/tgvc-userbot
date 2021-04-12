@@ -102,7 +102,10 @@ self_or_contact_filter = filters.create(
 
 async def group_admin_filter_func(_, client: Client, message: Message):
     admins = await get_chat_admins(client, message.chat.id)
-    return message.from_user.id in admins
+    is_admin = message.from_user.id in admins
+    if not is_admin:
+        await message.reply_text(f'{emoji.NO_ENTRY} This command can only be used by a group admin.')
+    return is_admin
 
 group_admin_filter = filters.create(group_admin_filter_func)
 
@@ -424,10 +427,10 @@ async def show_current_playing_time(_, m: Message):
     if mp.msg.get('current') is not None:
         await mp.msg['current'].delete()
     mp.msg['current'] = await playlist[0].message.reply_text(
-        f"**Currently Playing: **"
+        f"**Currently Playing:**" + " " +
         f"**[{playlist[0].title}]({playlist[0].link or playlist[0].message.link})**\n" +
-        f"{emoji.PLAY_BUTTON}  {utcnow - start_time} / "
-        f"{timedelta(seconds=playlist[0].duration)}",
+        f"`{emoji.PLAY_BUTTON} {utcnow - start_time}` / "
+        f"`{timedelta(seconds=playlist[0].duration)}`",
         disable_notification=True,
         disable_web_page_preview=True
     )
@@ -447,7 +450,8 @@ async def show_help(_, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.command("skip", prefixes=COMMAND_PREFIX))
+                   & filters.command("skip", prefixes=COMMAND_PREFIX)
+                   & group_admin_filter)
 async def skip_track(_, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     playlist = mp.playlist
@@ -546,7 +550,8 @@ async def list_voice_chat(_, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.command('stop', prefixes=COMMAND_PREFIX))
+                   & filters.command('stop', prefixes=COMMAND_PREFIX)
+                   & group_admin_filter)
 async def stop_playing(c: Client, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     group_call = mp.group_call
