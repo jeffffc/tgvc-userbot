@@ -36,6 +36,7 @@ from userbot import cache, GLOBAL_ADMINS, global_admins_filter, LOG_GROUP_ID, CO
 
 DELETE_DELAY = 8
 MUSIC_MAX_LENGTH = 10800
+MUSIC_MAX_LENGTH_NONADMIN = 900
 DELAY_DELETE_INFORM = 10
 MAX_PLAYLIST_LENGTH = 8
 
@@ -81,7 +82,6 @@ USERBOT_REPO = f"""{emoji.ROBOT} **Telegram Voice Chat UserBot**
 - Repository: [GitHub](https://github.com/callsmusic/tgvc-userbot)
 - License: AGPL-3.0-or-later"""
 
-
 # - Pyrogram filters
 
 main_filter = (
@@ -98,14 +98,18 @@ self_or_contact_filter = filters.create(
 )
 
 
+async def is_from_admin(c: Client, m: Message) -> bool:
+    return m.from_user.id in GLOBAL_ADMINS or m.from_user.id in await get_chat_admins(c, m.chat.id)
+
+
 async def group_admin_filter_func(_, client: Client, message: Message):
-    admins = await get_chat_admins(client, message.chat.id)
-    is_admin = message.from_user.id in admins
+    is_admin = await is_from_admin(client, message)
     if not is_admin:
         await message.reply_text(f'{emoji.NO_ENTRY} This command can only be used by a group admin.')
     return is_admin
 
-group_admin_filter = global_admins_filter | filters.create(group_admin_filter_func)
+
+group_admin_filter = filters.create(group_admin_filter_func)
 
 
 async def get_chat_admins(c: Client, chat_id: int) -> List[int]:
@@ -126,6 +130,7 @@ async def get_chat_admins(c: Client, chat_id: int) -> List[int]:
 async def current_vc_filter(_, __, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     return bool(mp) and mp.group_call.is_connected
+
 
 current_vc = filters.create(current_vc_filter)
 
@@ -263,12 +268,19 @@ async def play_track(client, m: Message):
         return
     # check audio
     if m.audio:
-        if m.audio.duration > 600:
-            reply = await m.reply_text(
-                f"{emoji.ROBOT} audio which duration longer than 10 min "
-                "won't be automatically added to playlist"
-            )
-            await _delay_delete_messages((reply, ), DELETE_DELAY)
+        if m.audio.duration > MUSIC_MAX_LENGTH_NONADMIN:
+            if await is_from_admin(client, m):
+                reply = await m.reply_text(
+                    f"{emoji.ROBOT} audio which duration longer than {timedelta(seconds=MUSIC_MAX_LENGTH_NONADMIN)} "
+                    "won't be automatically added to playlist"
+                )
+            else:
+                reply = await m.reply_text(
+                    "This won't be downloaded because its audio length is "
+                    "longer than the limit `{}` which is set by the bot"
+                    .format(timedelta(seconds=MUSIC_MAX_LENGTH_NONADMIN))
+                )
+            await _delay_delete_messages((reply,), DELETE_DELAY)
             return
         m_audio = m
     elif m.reply_to_message and m.reply_to_message.audio:
@@ -277,11 +289,11 @@ async def play_track(client, m: Message):
         await mp.send_playlist()
         await m.delete()
         return
-    if m_audio.audio.duration > MUSIC_MAX_LENGTH:
-        readable_max_length = str(timedelta(seconds=MUSIC_MAX_LENGTH))
+    max_length = MUSIC_MAX_LENGTH if await is_from_admin(client, m) else MUSIC_MAX_LENGTH_NONADMIN
+    if m_audio.audio.duration > max_length:
         inform = ("This won't be downloaded because its audio length is "
                   "longer than the limit `{}` which is set by the bot"
-                  .format(readable_max_length))
+                  .format(timedelta(seconds=max_length)))
         await _reply_and_delete_later(m, inform,
                                       DELAY_DELETE_INFORM)
         return
@@ -398,11 +410,11 @@ async def add_youtube_to_playlist(client: Client, message: Message, yt_link: str
     yt_title = info_dict['title']
     yt_duration = info_dict['duration']
 
-    if yt_duration > MUSIC_MAX_LENGTH:
-        readable_max_length = str(timedelta(seconds=MUSIC_MAX_LENGTH))
+    max_length = MUSIC_MAX_LENGTH if await is_from_admin(client, message) else MUSIC_MAX_LENGTH_NONADMIN
+    if yt_duration > max_length:
         inform = ("This won't be downloaded because its audio length is "
                   "longer than the limit `{}` which is set by the bot"
-                  .format(readable_max_length))
+                  .format(timedelta(seconds=max_length)))
         await _reply_and_delete_later(message, inform,
                                       DELAY_DELETE_INFORM)
         return
@@ -477,9 +489,7 @@ async def skip_track(c: Client, m: Message):
     playlist = mp.playlist
     if len(m.command) == 1:
         to_skip = playlist[0]
-        if to_skip.added_by == m.from_user.id \
-                or m.from_user.id in GLOBAL_ADMINS \
-                or m.from_user.id in await get_chat_admins(c, m.chat.id):
+        if to_skip.added_by == m.from_user.id or await is_from_admin(c, m):
             await skip_current_playing(mp)
         else:
             await m.reply(f"{emoji.NO_ENTRY} You can't skip songs that someone else added!")
@@ -494,9 +504,7 @@ async def skip_track(c: Client, m: Message):
                 if 2 <= i <= (len(playlist) - 1):
                     to_skip = playlist[i]
                     audio = f"[{to_skip.title}]({to_skip.link or to_skip.message.link})"
-                    if to_skip.added_by == m.from_user.id \
-                            or m.from_user.id in GLOBAL_ADMINS \
-                            or m.from_user.id in await get_chat_admins(c, m.chat.id):
+                    if to_skip.added_by == m.from_user.id or await is_from_admin(c, m):
                         playlist.pop(i)
                         text.append(f"{emoji.WASTEBASKET} {i}. **{audio}**")
                     else:
