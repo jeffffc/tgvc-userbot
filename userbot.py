@@ -3,8 +3,6 @@ from pyrogram import Client, idle, filters
 from aiocache import Cache
 import os
 
-from plugins.vc.player import leave_all_voice_chat
-
 GLOBAL_ADMINS = [
     106665913,
     295152997
