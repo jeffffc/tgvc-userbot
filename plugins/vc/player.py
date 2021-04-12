@@ -586,7 +586,7 @@ async def list_voice_chat(_, m: Message):
             f"{emoji.MUSICAL_NOTES} **currently in the voice chat(s)**:\n" +
             '\n'.join((f"{i + 1}: **{mp.chat_title} ({chat_id})**\n" +
                        f'>> Uptime: ' + str(datetime.utcnow() - mp.join_voice_chat_time) + '\n' +
-                       f'>> No. of songs in queue: ' + str(len(mp.playlist)) +
+                       f'>> No. of songs in queue: ' + str(len(mp.playlist)) + '\n' +
                        f'>> Total duration: ' + str(timedelta(seconds=sum((x.duration for x in mp.playlist))))
                        for i, (chat_id, mp) in enumerate(MUSIC_PLAYERS.items())))
         )
