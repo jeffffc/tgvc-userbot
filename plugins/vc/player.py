@@ -337,7 +337,7 @@ async def youtube_player(client: Client, message: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.command("search", prefixes=COMMAND_PREFIX))
+                   & filters.command("search", prefixes=[COMMAND_PREFIX, '/']))
 async def youtube_searcher(client: Client, message: Message):
     mp = MUSIC_PLAYERS.get(message.chat.id)
     if not mp:
@@ -483,7 +483,7 @@ async def show_help(_, m: Message):
 
 @Client.on_message(main_filter
                    & current_vc
-                   & filters.command("skip", prefixes=COMMAND_PREFIX))
+                   & filters.command("skip", prefixes=[COMMAND_PREFIX, '/']))
 async def skip_track(c: Client, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
     playlist = mp.playlist
