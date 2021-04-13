@@ -20,7 +20,6 @@ import asyncio
 import logging
 import os
 import signal
-from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 
@@ -30,7 +29,7 @@ from pyrogram.types import Message, ChatMember
 from youtube_dl import YoutubeDL
 import pickle
 
-from utilities.config import GLOBAL_ADMINS, LOG_GROUP_ID, COMMAND_PREFIX, PICKLE_FILE_NAME
+from utilities.config import GLOBAL_ADMINS, COMMAND_PREFIX, PICKLE_FILE_NAME
 from userbot import cache, global_admins_filter
 
 from utilities.musicplayer import MusicToPlay, MusicPlayer, MUSIC_PLAYERS, search_youtube, skip_current_playing
@@ -138,15 +137,6 @@ async def current_vc_filter(_, __, m: Message):
 current_vc = filters.create(current_vc_filter)
 
 
-# - pytgcalls handlers
-
-
-
-
-
-# MUSIC_PLAYERS: Dict[int, MusicPlayer] = {}
-
-
 # - Pyrogram handlers
 
 
@@ -172,7 +162,6 @@ def avoid_receiving_messages_twice(_, m: Message):
 )
 async def play_track(client, m: Message):
     mp = MUSIC_PLAYERS.get(m.chat.id)
-    group_call = mp.group_call
     playlist = mp.playlist
     # check audio
     if m.audio:
@@ -200,7 +189,7 @@ async def play_track(client, m: Message):
     # check playlist length
     if len(playlist) >= MAX_PLAYLIST_LENGTH:
         await reply_and_delete_later(m, f'{emoji.CROSS_MARK} There are already {MAX_PLAYLIST_LENGTH} songs in '
-                                         f'the playlist, cannot add more!', DELETE_DELAY)
+                                        f'the playlist, cannot add more!', DELETE_DELAY)
         return
     max_length = MUSIC_MAX_LENGTH if await is_from_admin(client, m) else MUSIC_MAX_LENGTH_NONADMIN
     if m_audio.audio.duration > max_length:
@@ -224,13 +213,7 @@ async def play_track(client, m: Message):
         m_status = await m.reply_text(
             f"{emoji.INBOX_TRAY} downloading and transcoding..."
         )
-        await mp.download_audio(to_play)
-        group_call.input_filename = os.path.join(
-            client.workdir,
-            DEFAULT_DOWNLOAD_DIR,
-            to_play.raw_file_name
-        )
-        await mp.update_start_time()
+        await mp.play_track(to_play)
         await m_status.delete()
         print(f"- START PLAYING: {m_audio.audio.title}")
     await mp.send_playlist()
@@ -259,7 +242,7 @@ async def youtube_searcher(client: Client, message: Message):
     # check playlist length
     if len(mp.playlist) >= MAX_PLAYLIST_LENGTH:
         await reply_and_delete_later(message, f'{emoji.CROSS_MARK} There are already {MAX_PLAYLIST_LENGTH} songs in '
-                                               f'the playlist, cannot add more!', DELETE_DELAY)
+                                              f'the playlist, cannot add more!', DELETE_DELAY)
         return
 
     if len(message.command) > 1:
@@ -313,7 +296,7 @@ async def add_youtube_to_playlist(client: Client, message: Message, yt_link: str
     # check playlist length
     if len(playlist) >= MAX_PLAYLIST_LENGTH:
         await reply_and_delete_later(message, f'{emoji.CROSS_MARK} There are already {MAX_PLAYLIST_LENGTH} songs in '
-                                               f'the playlist, cannot add more!', DELETE_DELAY)
+                                              f'the playlist, cannot add more!', DELETE_DELAY)
         return
 
     ydl = YoutubeDL()
@@ -435,21 +418,15 @@ async def skip_track(c: Client, m: Message):
 @Client.on_message(main_filter
                    & filters.command('join', prefixes=COMMAND_PREFIX)
                    & group_admin_filter)
-async def join_group_call(client, m: Message = None, chat_id: int = None, chat_title: str = None):
-    mp = MUSIC_PLAYERS.get(m.chat.id if m else chat_id)
-    if mp and mp.group_call.is_connected and m:
+async def join_group_call(client, m: Message):
+    mp = MUSIC_PLAYERS.get(m.chat.id)
+    if mp and mp.group_call.is_connected:
         await m.reply_text(f"{emoji.ROBOT} already joined a voice chat")
         return
     if not mp:
         mp = MusicPlayer()
-        mp.chat_id = m.chat.id if m else chat_id
-        mp.chat_title = m.chat.title if m else chat_title
-        MUSIC_PLAYERS[m.chat.id if m else chat_id] = mp
-    group_call = mp.group_call
-    group_call.client = client
-    await group_call.start(m.chat.id if m else chat_id)
-    if m:
-        await m.delete()
+        await mp.join_group_call(client, m.chat.id, m.chat.title)
+    await m.delete()
 
 
 @Client.on_message(main_filter

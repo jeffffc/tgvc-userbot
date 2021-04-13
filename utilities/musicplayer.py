@@ -13,7 +13,7 @@ from pytgcalls import GroupCall
 from youtube_dl import YoutubeDL
 from youtube_search import YoutubeSearch
 
-from utilities.config import GLOBAL_ADMINS, LOG_GROUP_ID, COMMAND_PREFIX, PICKLE_FILE_NAME
+from utilities.config import LOG_GROUP_ID
 
 
 # - classes
@@ -225,6 +225,8 @@ def ffmpeg_process(audio_file, raw_file):
     except Exception as e:
         print(repr(e))
 
+
+# - pytgcalls handlers
 
 async def network_status_changed_handler(gc: GroupCall, is_connected: bool):
     if (not gc) or (not gc.full_chat):
