@@ -25,7 +25,8 @@ from typing import Optional, List, Dict
 
 from pyrogram import Client, filters, emoji
 from pyrogram.methods.messages.download_media import DEFAULT_DOWNLOAD_DIR
-from pyrogram.types import Message, ChatMember
+from pyrogram.types import Message, ChatMember, Update
+from pyrogram.raw.types import GroupCallDiscarded, UpdateGroupCall
 from youtube_dl import YoutubeDL
 import pickle
 
@@ -652,3 +653,17 @@ async def halt_bot(c: Client, m: Message):
     # send keyboard interrupt
     logging.info('Left all vc, mimic Ctrl+c to shut the bot down')
     os.kill(os.getpid(), signal.SIGINT)
+
+
+@Client.on_raw_update(group=-2)
+async def raw_update_handler(client: Client, update: Update, users: dict, chats: dict):
+    if isinstance(update, UpdateGroupCall):
+        if isinstance(update.call, GroupCallDiscarded):
+            chat_id = int("-100" + str(update.chat_id))
+
+            mp = MUSIC_PLAYERS.get(chat_id)
+            group_call = mp.group_call
+            mp.playlist.clear()
+            group_call.input_filename = ''
+            del MUSIC_PLAYERS[chat_id]
+            clean_files(client)

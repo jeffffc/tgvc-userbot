@@ -53,6 +53,7 @@ class MusicPlayer(object):
         self.chat_title = chat_title
         self.group_call.client = client
         await self.group_call.start(chat_id)
+        MUSIC_PLAYERS[chat_id] = self
 
     async def play_track(self, to_play: MusicToPlay):
         await self.download_audio(to_play)
