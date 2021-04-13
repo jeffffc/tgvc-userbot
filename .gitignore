@@ -21,3 +21,6 @@ __pycache__/
 
 # .idea directory
 /.idea/
+
+# local pickle storage
+/*.pickle
