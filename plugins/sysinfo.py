@@ -4,7 +4,7 @@ import psutil
 from psutil._common import bytes2human
 from pyrogram import Client, filters
 
-from userbot import global_admins_filter
+from userbot import global_admins_filter, COMMAND_PREFIX
 
 self_or_contact_filter = filters.create(
     lambda
@@ -85,7 +85,7 @@ async def generate_sysinfo(workdir):
                    & filters.text
                    & ~filters.edited
                    & ~filters.via_bot
-                   & filters.regex("^!sysinfo$"))
+                   & filters.command('sysinfo', prefixes=COMMAND_PREFIX))
 async def get_sysinfo(client, m):
     response = "**System Information**:\n"
     m_reply = await m.reply_text(f"{response}`...`")

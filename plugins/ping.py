@@ -6,6 +6,8 @@ from datetime import datetime
 from pyrogram import Client, filters, emoji
 from pyrogram.types import Message
 
+from userbot import COMMAND_PREFIX
+
 # DELAY_DELETE = 60
 START_TIME = datetime.utcnow()
 START_TIME_ISO = START_TIME.replace(microsecond=0).isoformat()
@@ -40,10 +42,9 @@ async def _human_time_duration(seconds):
 
 
 @Client.on_message(filters.text
-                   & self_or_contact_filter
                    & ~filters.edited
                    & ~filters.via_bot
-                   & filters.regex("^!ping$"))
+                   & filters.command('ping', prefixes=COMMAND_PREFIX))
 async def ping_pong(_, m: Message):
     """reply ping with pong and delete both messages"""
     start = time()
@@ -55,10 +56,9 @@ async def ping_pong(_, m: Message):
 
 
 @Client.on_message(filters.text
-                   & self_or_contact_filter
                    & ~filters.edited
                    & ~filters.via_bot
-                   & filters.regex("^!uptime$"))
+                   & filters.command('uptime', prefixes=COMMAND_PREFIX))
 async def get_uptime(_, m: Message):
     """/uptime Reply with readable uptime and ISO 8601 start time"""
     current_time = datetime.utcnow()
