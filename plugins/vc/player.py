@@ -428,10 +428,6 @@ async def join_group_call(client, m: Message):
     if not mp:
         mp = MusicPlayer()
         await mp.join_group_call(client, m.chat.id, m.chat.title)
-        with open(GROUP_CONFIG_FILE_NAME, 'r', encoding='utf-8') as f:
-            configs = json.load(f)
-            if str(mp.chat_id) in configs:
-                mp.config.max_num_of_songs = configs[str(mp.chat_id)]['max_num_of_songs']
     await m.delete()
 
 

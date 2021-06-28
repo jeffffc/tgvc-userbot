@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import traceback
 from datetime import datetime
@@ -13,7 +14,7 @@ from pytgcalls import GroupCall
 from youtube_dl import YoutubeDL
 from youtube_search import YoutubeSearch
 
-from utilities.config import LOG_GROUP_ID
+from utilities.config import LOG_GROUP_ID, GROUP_CONFIG_FILE_NAME
 
 
 # - classes
@@ -58,6 +59,12 @@ class MusicPlayer(object):
         self.chat_id = chat_id
         self.chat_title = chat_title
         self.group_call.client = client
+
+        with open(GROUP_CONFIG_FILE_NAME, 'r', encoding='utf-8') as f:
+            configs = json.load(f)
+            if str(self.chat_id) in configs:
+                self.config.max_num_of_songs = configs[str(self.chat_id)]['max_num_of_songs']
+
         await self.group_call.start(chat_id)
         MUSIC_PLAYERS[chat_id] = self
 
