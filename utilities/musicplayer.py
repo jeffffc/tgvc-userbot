@@ -55,15 +55,11 @@ class MusicPlayer(object):
 
         self.config = Config()
 
-    async def join_group_call(self, client: Client, chat_id: int, chat_title: str):
+    async def join_group_call(self, client: Client, chat_id: int, chat_title: str, max_num_of_songs: int):
         self.chat_id = chat_id
         self.chat_title = chat_title
         self.group_call.client = client
-
-        with open(GROUP_CONFIG_FILE_NAME, 'r', encoding='utf-8') as f:
-            configs = json.load(f)
-            if str(self.chat_id) in configs:
-                self.config.max_num_of_songs = configs[str(self.chat_id)]['max_num_of_songs']
+        self.config.max_num_of_songs = max_num_of_songs or 8
 
         await self.group_call.start(chat_id)
         MUSIC_PLAYERS[chat_id] = self
