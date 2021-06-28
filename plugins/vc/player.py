@@ -679,29 +679,32 @@ async def raw_update_handler(client: Client, update: Update, users: dict, chats:
                    & filters.command('max', prefixes=COMMAND_PREFIX)
                    & group_admin_filter)
 async def amend_max_num_of_songs(client, m: Message):
-    if len(m.command) <= 1:
-        await m.reply_text(f"Please use !max `8` to specify max number of songs in this group's queue.",
-                           parse_mode='md')
-        return
-    num = 0
-    if len(m.command) > 1:
-        try:
-            num = int(m.command[1])
-        except Exception as e:
+    try:
+        if len(m.command) <= 1:
             await m.reply_text(f"Please use !max `8` to specify max number of songs in this group's queue.",
                                parse_mode='md')
             return
-    mp = MUSIC_PLAYERS.get(m.chat.id)
-    if mp:
-        mp.config.max_num_of_songs = num
+        num = 0
+        if len(m.command) > 1:
+            try:
+                num = int(m.command[1])
+            except Exception as e:
+                await m.reply_text(f"Please use !max `8` to specify max number of songs in this group's queue.",
+                                   parse_mode='md')
+                return
+        mp = MUSIC_PLAYERS.get(m.chat.id)
+        if mp:
+            mp.config.max_num_of_songs = num
 
-    configs = {}
+        configs = {}
 
-    with open(GROUP_CONFIG_FILE_NAME, 'r', encoding='utf-8') as f:
-        configs = json.load(f)
-        new_value = {'max_num_of_songs': num}
-        configs[str(m.chat.id)] = new_value
-    with open(GROUP_CONFIG_FILE_NAME, 'w', encoding='utf-8') as f:
-        json.dump(configs, f, ensure_ascii=False)
+        with open(GROUP_CONFIG_FILE_NAME, 'r', encoding='utf-8') as f:
+            configs = json.load(f)
+            new_value = {'max_num_of_songs': num}
+            configs[str(m.chat.id)] = new_value
+        with open(GROUP_CONFIG_FILE_NAME, 'w', encoding='utf-8') as f:
+            json.dump(configs, f, ensure_ascii=False)
 
-    await m.reply_text(f"Max number of songs in this group's queue has been set to `{num}`", parse_mode='md')
+        await m.reply_text(f"Max number of songs in this group's queue has been set to `{num}`", parse_mode='md')
+    except Exception as e:
+        await m.reply_text(str(e))
