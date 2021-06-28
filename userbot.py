@@ -24,7 +24,12 @@ async def load_saved_playlists():
                 mp = MusicPlayer()
                 MUSIC_PLAYERS[chat_id] = mp
                 mp.group_call.client = app
-                await mp.join_group_call(app, chat_id, info['chat_title'])
+                num = 8
+                with open(GROUP_CONFIG_FILE_NAME, 'r', encoding='utf-8') as f2:
+                    configs = json.load(f2)
+                    if str(chat_id) in configs:
+                        num = configs[str(chat_id)]['max_num_of_songs']
+                await mp.join_group_call(app, chat_id, info['chat_title'], num)
                 mp.playlist = info['playlist']
                 await mp.play_track(mp.playlist[0])
                 for track in mp.playlist[:2]:
