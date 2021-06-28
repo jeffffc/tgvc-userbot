@@ -24,3 +24,6 @@ __pycache__/
 
 # local pickle storage
 /*.pickle
+
+# local group config
+/groupconfig.json
