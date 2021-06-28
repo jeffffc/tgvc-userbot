@@ -7,8 +7,9 @@ import pickle
 from pathlib import Path
 from typing import Dict
 import asyncio
+import json
 
-from utilities.config import GLOBAL_ADMINS, LOG_GROUP_ID, COMMAND_PREFIX, PICKLE_FILE_NAME
+from utilities.config import GLOBAL_ADMINS, LOG_GROUP_ID, COMMAND_PREFIX, PICKLE_FILE_NAME, GROUP_CONFIG_FILE_NAME
 
 global_admins_filter = (
     filters.incoming & filters.user(GLOBAL_ADMINS)
@@ -31,6 +32,19 @@ async def load_saved_playlists():
                 await mp.send_playlist()
 
 
+async def load_group_config():
+    if not Path(GROUP_CONFIG_FILE_NAME).exists():
+        new_dict = {}
+        with open(GROUP_CONFIG_FILE_NAME, 'w', encoding='utf-8') as f:
+            json.dump(new_dict, f, ensure_ascii=False)
+
+    with open(GROUP_CONFIG_FILE_NAME, 'r+', encoding='utf-8') as f:
+        configs = json.load(f)
+        for chat_id, cfg in configs.items():
+            if int(chat_id) in MUSIC_PLAYERS:
+                MUSIC_PLAYERS[chat_id].config.max_num_of_songs = cfg['max_num_of_songs']
+
+
 app = Client("test")
 logging.basicConfig(level=logging.INFO)
 cache = Cache(Cache.MEMORY)
@@ -40,6 +54,7 @@ if __name__ == '__main__':
     app.start()
     loop = asyncio.get_event_loop()
     loop.run_until_complete(load_saved_playlists())
+    loop.run_until_complete(load_group_config())
     print('>>> USERBOT STARTED')
     app.send_message(LOG_GROUP_ID, f'Bot started!')
     idle()

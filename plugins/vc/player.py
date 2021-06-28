@@ -17,6 +17,7 @@ How to use:
 - check !help for more commands
 """
 import asyncio
+import json
 import logging
 import os
 import signal
@@ -30,8 +31,8 @@ from pyrogram.raw.types import GroupCallDiscarded, UpdateGroupCall
 from youtube_dl import YoutubeDL
 import pickle
 
-from utilities.config import GLOBAL_ADMINS, COMMAND_PREFIX, PICKLE_FILE_NAME
-from userbot import cache, global_admins_filter
+from utilities.config import GLOBAL_ADMINS, COMMAND_PREFIX, PICKLE_FILE_NAME, GROUP_CONFIG_FILE_NAME
+from userbot import cache, global_admins_filter, load_group_config
 
 from utilities.musicplayer import MusicToPlay, MusicPlayer, MUSIC_PLAYERS, search_youtube, skip_current_playing
 from utilities.musicplayer import delay_delete_messages, reply_and_delete_later, clean_files
@@ -188,8 +189,8 @@ async def play_track(client, m: Message):
         await m.delete()
         return
     # check playlist length
-    if len(playlist) >= MAX_PLAYLIST_LENGTH:
-        await reply_and_delete_later(m, f'{emoji.CROSS_MARK} There are already {MAX_PLAYLIST_LENGTH} songs in '
+    if len(playlist) >= (mp.config.max_num_of_songs or MAX_PLAYLIST_LENGTH):
+        await reply_and_delete_later(m, f'{emoji.CROSS_MARK} There are already {mp.config.max_num_of_songs or MAX_PLAYLIST_LENGTH} songs in '
                                         f'the playlist, cannot add more!', DELETE_DELAY)
         return
     max_length = MUSIC_MAX_LENGTH if await is_from_admin(client, m) else MUSIC_MAX_LENGTH_NONADMIN
@@ -241,8 +242,8 @@ async def youtube_searcher(client: Client, message: Message):
         return
 
     # check playlist length
-    if len(mp.playlist) >= MAX_PLAYLIST_LENGTH:
-        await reply_and_delete_later(message, f'{emoji.CROSS_MARK} There are already {MAX_PLAYLIST_LENGTH} songs in '
+    if len(mp.playlist) >= (mp.config.max_num_of_songs or MAX_PLAYLIST_LENGTH):
+        await reply_and_delete_later(message, f'{emoji.CROSS_MARK} There are already {mp.config.max_num_of_songs or MAX_PLAYLIST_LENGTH} songs in '
                                               f'the playlist, cannot add more!', DELETE_DELAY)
         return
 
@@ -295,8 +296,8 @@ async def add_youtube_to_playlist(client: Client, message: Message, yt_link: str
     group_call = mp.group_call
 
     # check playlist length
-    if len(playlist) >= MAX_PLAYLIST_LENGTH:
-        await reply_and_delete_later(message, f'{emoji.CROSS_MARK} There are already {MAX_PLAYLIST_LENGTH} songs in '
+    if len(playlist) >= (mp.config.max_num_of_songs or MAX_PLAYLIST_LENGTH):
+        await reply_and_delete_later(message, f'{emoji.CROSS_MARK} There are already {mp.config.max_num_of_songs or MAX_PLAYLIST_LENGTH} songs in '
                                               f'the playlist, cannot add more!', DELETE_DELAY)
         return
 
@@ -427,6 +428,10 @@ async def join_group_call(client, m: Message):
     if not mp:
         mp = MusicPlayer()
         await mp.join_group_call(client, m.chat.id, m.chat.title)
+        with open(GROUP_CONFIG_FILE_NAME, 'r', encoding='utf-8') as f:
+            configs = json.load(f)
+            if str(mp.chat_id) in configs:
+                mp.config.max_num_of_songs = configs[str(mp.chat_id)]['max_num_of_songs']
     await m.delete()
 
 
@@ -667,3 +672,35 @@ async def raw_update_handler(client: Client, update: Update, users: dict, chats:
             group_call.input_filename = ''
             del MUSIC_PLAYERS[chat_id]
             clean_files(client)
+
+
+@Client.on_message(main_filter
+                   & filters.command('max', prefixes=COMMAND_PREFIX)
+                   & group_admin_filter)
+async def amend_max_num_of_songs(client, m: Message):
+    if len(m.command) <= 1:
+        await m.reply_text(f"Please use !max `8` to specify max number of songs in this group's queue.",
+                           parse_mode='md')
+        return
+    num = 0
+    if len(m.command) > 1:
+        try:
+            num = int(m.command[1])
+        except Exception as e:
+            await m.reply_text(f"Please use !max `8` to specify max number of songs in this group's queue.",
+                               parse_mode='md')
+            return
+    mp = MUSIC_PLAYERS.get(m.chat.id)
+    if mp:
+        mp.config.max_num_of_songs = num
+
+    configs = {}
+
+    with open(GROUP_CONFIG_FILE_NAME, 'r', encoding='utf-8') as f:
+        configs = json.load(f)
+        new_value = {'max_num_of_songs': num}
+        configs[str(m.chat.id)] = new_value
+    with open(GROUP_CONFIG_FILE_NAME, 'w', encoding='utf-8') as f:
+        json.dump(configs, f, ensure_ascii=False)
+
+    await m.reply_text(f"Max number of songs in this group's queue has been set to `{num}`", parse_mode='md')

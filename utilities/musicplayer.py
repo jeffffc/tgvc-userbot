@@ -18,6 +18,10 @@ from utilities.config import LOG_GROUP_ID
 
 # - classes
 
+class Config(object):
+    def __init__(self):
+        self.max_num_of_songs = 8
+
 
 class MusicToPlay(object):
     def __init__(self, m: Message, added_by: int, title: str, duration: int, raw_file_name: str, link: Optional[str]):
@@ -47,6 +51,8 @@ class MusicPlayer(object):
         self.playlist: List[MusicToPlay] = []
         self.msg = {}
         self.join_voice_chat_time = datetime.utcnow()
+
+        self.config = Config()
 
     async def join_group_call(self, client: Client, chat_id: int, chat_title: str):
         self.chat_id = chat_id
