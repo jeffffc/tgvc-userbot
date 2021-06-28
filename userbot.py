@@ -47,7 +47,7 @@ async def load_group_config():
         configs = json.load(f)
         for chat_id, cfg in configs.items():
             if int(chat_id) in MUSIC_PLAYERS:
-                MUSIC_PLAYERS[chat_id].config.max_num_of_songs = cfg['max_num_of_songs']
+                MUSIC_PLAYERS[int(chat_id)].config.max_num_of_songs = cfg['max_num_of_songs']
 
 
 app = Client("test")
