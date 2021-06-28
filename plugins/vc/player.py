@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import signal
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
@@ -708,3 +709,19 @@ async def amend_max_num_of_songs(client, m: Message):
         await m.reply_text(f"Max number of songs in this group's queue has been set to `{num}`", parse_mode='md')
     except Exception as e:
         await m.reply_text(str(e))
+
+
+@Client.on_message(main_filter
+                   & current_vc
+                   & filters.command('shuffle', prefixes=[COMMAND_PREFIX, '/']))
+async def shuffle_playlist(_, m: Message):
+    mp = MUSIC_PLAYERS.get(m.chat.id)
+    playlist = list(mp.playlist)
+    shuffle(playlist, 2, None)
+    mp.playlist = playlist
+    await m.reply_text('Shuffled.')
+    await mp.send_playlist()
+
+
+def shuffle(x, *s):
+    x[slice(*s)] = random.sample(x[slice(*s)], len(x[slice(*s)]))
