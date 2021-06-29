@@ -44,6 +44,7 @@ MUSIC_MAX_LENGTH = 10800
 MUSIC_MAX_LENGTH_NONADMIN = 900
 DELAY_DELETE_INFORM = 10
 MAX_PLAYLIST_LENGTH = 8
+DEFAULT_RANDOM_MODE = False
 
 REGEX_SITES = (
     r"^((?:https?:)?\/\/)"
@@ -429,11 +430,13 @@ async def join_group_call(client, m: Message):
     if not mp:
         mp = MusicPlayer()
         num = MAX_PLAYLIST_LENGTH
+        random_mode = DEFAULT_RANDOM_MODE
         with open(GROUP_CONFIG_FILE_NAME, 'r', encoding='utf-8') as f:
             configs = json.load(f)
             if str(m.chat.id) in configs:
-                num = configs[str(m.chat.id)]['max_num_of_songs']
-        await mp.join_group_call(client, m.chat.id, m.chat.title, num)
+                num = configs[str(m.chat.id)].get('max_num_of_songs') or MAX_PLAYLIST_LENGTH
+                random_mode = configs[str(m.chat.id)].get('random_mode') or DEFAULT_RANDOM_MODE
+        await mp.join_group_call(client, m.chat.id, m.chat.title, num, random_mode)
     await m.delete()
 
 
@@ -701,8 +704,9 @@ async def amend_max_num_of_songs(client, m: Message):
 
         with open(GROUP_CONFIG_FILE_NAME, 'r', encoding='utf-8') as f:
             configs = json.load(f)
-            new_value = {'max_num_of_songs': num}
-            configs[str(m.chat.id)] = new_value
+            if str(m.chat.id) not in configs:
+                configs[str(m.chat.id)] = {}
+            configs[str(m.chat.id)]['max_num_of_songs'] = num
         with open(GROUP_CONFIG_FILE_NAME, 'w', encoding='utf-8') as f:
             json.dump(configs, f, ensure_ascii=False)
 
@@ -725,3 +729,24 @@ async def shuffle_playlist(_, m: Message):
 
 def shuffle(x, *s):
     x[slice(*s)] = random.sample(x[slice(*s)], len(x[slice(*s)]))
+
+
+@Client.on_message(main_filter
+                   & filters.command('random', prefixes=COMMAND_PREFIX)
+                   & group_admin_filter)
+async def amend_random_mode(client, m: Message):
+
+    mp = MUSIC_PLAYERS.get(m.chat.id)
+    if mp:
+        mp.config.random_mode = not mp.config.random_mode
+
+        configs = {}
+
+        with open(GROUP_CONFIG_FILE_NAME, 'r', encoding='utf-8') as f:
+            configs = json.load(f)
+            if str(m.chat.id) not in configs:
+                configs[str(m.chat.id)] = {}
+            configs[str(m.chat.id)]['random_mode'] = mp.config.random_mode
+        with open(GROUP_CONFIG_FILE_NAME, 'w', encoding='utf-8') as f:
+            json.dump(configs, f, ensure_ascii=False)
+        await m.reply_text(f"Random mode for this chat is now `{'On' if mp.config.random_mode else 'Off'}`", parse_mode='md')

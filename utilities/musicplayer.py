@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import random
 import traceback
 from datetime import datetime
 from typing import Optional, List, Dict
@@ -22,6 +23,7 @@ from utilities.config import LOG_GROUP_ID, GROUP_CONFIG_FILE_NAME
 class Config(object):
     def __init__(self):
         self.max_num_of_songs = 8
+        self.random_mode = False
 
 
 class MusicToPlay(object):
@@ -55,11 +57,12 @@ class MusicPlayer(object):
 
         self.config = Config()
 
-    async def join_group_call(self, client: Client, chat_id: int, chat_title: str, max_num_of_songs: int):
+    async def join_group_call(self, client: Client, chat_id: int, chat_title: str, max_num_of_songs: int, random_mode: bool):
         self.chat_id = chat_id
         self.chat_title = chat_title
         self.group_call.client = client
         self.config.max_num_of_songs = max_num_of_songs or 8
+        self.config.random_mode = random_mode or False
 
         await self.group_call.start(chat_id)
         MUSIC_PLAYERS[chat_id] = self
@@ -98,12 +101,19 @@ class MusicPlayer(object):
         else:
             pl = f"{emoji.PLAY_BUTTON} **Currently playing:**\n" \
                  f"**[{playlist[0].title}]({playlist[0].link or playlist[0].message.link})**\n\n" \
-                 f"{emoji.PLAY_BUTTON} **Playlist:**\n"
-
-            pl += "\n".join([
-                f"**{i + 1}**. **[{x.title}]({x.link or x.message.link})**"
-                for i, x in enumerate(playlist[1:])
-            ])
+                 f"{emoji.PLAY_BUTTON} **Playlist:** `[Random ON]`\n"
+            if mp.config.random_mode:
+                pl += f"**NEXT UP**: **[{playlist[1].title}]({playlist[1].link or playlist[1].message.link})**\n"
+                if len(playlist) > 2:
+                    pl += "\n".join([
+                        f"**{i + 2}**. **[{x.title}]({x.link or x.message.link})**"
+                        for i, x in enumerate(playlist[2:])
+                    ])
+            else:
+                pl += "\n".join([
+                    f"**{i + 1}**. **[{x.title}]({x.link or x.message.link})**"
+                    for i, x in enumerate(playlist[1:])
+                ])
         if mp.msg.get('playlist') is not None:
             await mp.msg['playlist'].delete()
         mp.msg['playlist'] = await send_text(mp, pl)
@@ -141,6 +151,8 @@ async def skip_current_playing(mp: MusicPlayer):
     # remove old track from playlist
     playlist.pop(0)
     print(f"- START PLAYING: {playlist[0].title}")
+    if mp.config.random_mode and len(playlist) > 2:
+        playlist.insert(1, playlist.pop(random.randint(2, len(playlist) - 1)))
     await mp.send_playlist()
     clean_files(mp.group_call.client)
     if len(playlist) == 1:
