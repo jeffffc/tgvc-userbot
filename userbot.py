@@ -30,11 +30,12 @@ async def load_saved_playlists():
                     if str(chat_id) in configs:
                         num = configs[str(chat_id)]['max_num_of_songs']
                 await mp.join_group_call(app, chat_id, info['chat_title'], num)
-                mp.playlist = info['playlist']
-                await mp.play_track(mp.playlist[0])
-                for track in mp.playlist[:2]:
-                    await mp.download_audio(track)
-                await mp.send_playlist()
+                if info['playlist']:
+                    mp.playlist = info['playlist']
+                    await mp.play_track(mp.playlist[0])
+                    for track in mp.playlist[:2]:
+                        await mp.download_audio(track)
+                    await mp.send_playlist()
 
 
 async def load_group_config():
