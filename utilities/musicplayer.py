@@ -181,7 +181,12 @@ async def download_youtube_audio(mp: MusicPlayer, youtube_link: str, raw_file_na
         info_dict = ydl.extract_info(youtube_link, download=False)
 
         if not os.path.isfile(os.path.join(DEFAULT_DOWNLOAD_DIR, raw_file_name)):
-            ydl.process_info(info_dict)
+            try:
+                ydl.process_info(info_dict)
+            except Exception as e:
+                await log(mp, e)
+                ydl.cache.remove()
+                ydl.process_info(info_dict)
             audio_file = ydl.prepare_filename(info_dict)
             raw_file = os.path.join(mp.group_call.client.workdir, DEFAULT_DOWNLOAD_DIR,
                                     raw_file_name)
@@ -284,10 +289,11 @@ async def send_text(mp: MusicPlayer, text: str, chat: int = None):
     return message
 
 
-async def log(mp: MusicPlayer, e: Exception) -> Message:
+async def log(mp: MusicPlayer, e: Exception, text: str = "") -> Message:
     message = await send_text(mp, f'Error occured: {repr(e)}\nI have notified my owner about it already!')
     await send_text(mp,
                     f'Error occured at {mp.chat_id}:\n<code>' +
+                    "\n" + text + "\n" +
                     "".join(traceback.TracebackException.from_exception(e).format()) +
                     '</code>',
                     LOG_GROUP_ID)
